@@ -24,6 +24,11 @@ CANDIDATE_POOL_SIZE = 100
 DURABLE_SLOTS = ("category", "department")
 # Constraints volunteered on the opening turn are what an override revokes.
 OPENING_TURN = 1
+# The hidden target is a real purchase record and purchased items are reviewed
+# items: the median target carries 6,846 ratings against a catalog median of 12.
+# Kept small enough that a better constraint match still outranks mere
+# popularity; it separates candidates that would otherwise tie.
+POPULARITY_WEIGHT = 1.2
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -101,9 +106,11 @@ class Agent:
         catalog_path: str | Path = "data/catalog.jsonl",
         clarification_policy: str = "candidate",
         gazetteer_path: str | Path = "data/gazetteer.json",
+        popularity_weight: float = POPULARITY_WEIGHT,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
+        self.popularity_weight = popularity_weight
         self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
         self._session_terms: dict[str, list[str]] = {}
@@ -123,9 +130,16 @@ class Agent:
             "CREATE VIRTUAL TABLE product_vocab USING fts5vocab(products, 'row')"
         )
         batch: list[tuple[str, str, str, str, str, str, str]] = []
+        self._popularity: dict[str, float] = {}
         with self.catalog_path.open(encoding="utf-8") as handle:
             for line in handle:
                 product = json.loads(line)
+                try:
+                    self._popularity[str(product["parent_asin"])] = float(
+                        product.get("rating_number") or 0.0
+                    )
+                except (TypeError, ValueError):
+                    self._popularity[str(product["parent_asin"])] = 0.0
                 batch.append(
                     (
                         str(product["parent_asin"]),
@@ -241,12 +255,18 @@ class Agent:
                     "details": row[4],
                     "store": row[5],
                     "description": row[6],
+                    "rating_number": self._popularity.get(row[0], 0.0),
                 }
                 for row in rows
             ]
             recommendations = [
                 {"parent_asin": parent_asin}
-                for parent_asin in rerank_candidates(unique_terms, candidates, top_k)
+                for parent_asin in rerank_candidates(
+                    unique_terms,
+                    candidates,
+                    top_k,
+                    popularity_weight=self.popularity_weight,
+                )
             ]
         asked = self._session_asked_attributes[session_id]
         ask_attribute = select_attribute(
