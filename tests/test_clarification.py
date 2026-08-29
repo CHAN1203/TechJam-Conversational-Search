@@ -29,3 +29,16 @@ class ClarificationPolicyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AlwaysOtherPolicyTest(unittest.TestCase):
+    def test_always_asks_other_even_when_already_asked(self) -> None:
+        # Diagnostic probe only: the local simulator answers "other" with up to
+        # two undisclosed constraints while every specific attribute yields one,
+        # so repeating it measures the ceiling of what clarification can buy.
+        self.assertEqual(select_attribute("other", {}, set(), []), "other")
+        self.assertEqual(select_attribute("other", {}, {"other"}, []), "other")
+        self.assertEqual(
+            select_attribute("other", {"preference_tags": ["material"]}, {"other", "material"}, []),
+            "other",
+        )
