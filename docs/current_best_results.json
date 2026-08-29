@@ -1,0 +1,37 @@
+{
+  "experiment": "E11_popularity_prior",
+  "dataset": "data/public_set.jsonl",
+  "catalog": "data/catalog.jsonl",
+  "sample_count": 200,
+  "hit_rate_at_10": 0.965,
+  "mrr": 0.662125,
+  "mttc": 2.965,
+  "efficiency": 0.8035,
+  "technical_score": 0.841838,
+  "scenario_metrics": {
+    "boundary": {
+      "sample_count": 10,
+      "hit_rate_at_10": 0.9,
+      "mrr": 0.579444,
+      "mttc": 3.6
+    },
+    "browsing": {
+      "sample_count": 80,
+      "hit_rate_at_10": 1.0,
+      "mrr": 0.665595,
+      "mttc": 2.825
+    },
+    "buying": {
+      "sample_count": 80,
+      "hit_rate_at_10": 0.95,
+      "mrr": 0.696905,
+      "mttc": 2.2875
+    },
+    "intent_override": {
+      "sample_count": 30,
+      "hit_rate_at_10": 0.933333,
+      "mrr": 0.587685,
+      "mttc": 4.933333
+    }
+  }
+}
