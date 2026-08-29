@@ -348,3 +348,71 @@ class OverrideRetainsAnsweredConstraintsTest(ConversationStateTest):
             [{"parent_asin": "BLUE-COTTON"}],
             response["recommendations"],
         )
+
+
+class BuyingBrowsingRoutingTest(ConversationStateTest):
+    """A Buying customer discloses a concrete constraint on the opening turn
+    (docs/competition_specification.md); a Browsing customer starts vague.
+    The session is classified once, from the opening message only, and that
+    classification is used for the rest of the conversation.
+    """
+
+    def test_opening_constraint_routes_the_session_as_buying(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"black": 1}},
+        )
+        agent.respond("session", "I want a black shirt", 1, 1)
+        self.assertEqual("buying", agent._session_route["session"])
+
+    def test_vague_opening_message_routes_the_session_as_browsing(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"black": 1}},
+        )
+        agent.respond("session", "I want a shirt, still exploring", 1, 1)
+        self.assertEqual("browsing", agent._session_route["session"])
+
+    def test_route_is_frozen_after_the_opening_turn(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"black": 1}},
+        )
+        agent.respond("session", "I want a shirt, still exploring", 1, 1)
+        agent.respond("session", "black please", 2, 1)
+        self.assertEqual("browsing", agent._session_route["session"])
+
+    def test_buying_route_prefers_the_candidate_matching_every_constraint(self) -> None:
+        # MORE-HITS turns up via extra, unrelated feature words but is missing
+        # the color the customer actually asked for; ALL-MATCH satisfies every
+        # disclosed constraint. Only the Buying route should reward that.
+        agent = self.build_agent(
+            [
+                {
+                    "parent_asin": "ALL-MATCH",
+                    "title": "Black Leather Belt",
+                    "categories": "Belts", "features": "", "details": {},
+                    "store": "Example", "description": [],
+                },
+                {
+                    "parent_asin": "MORE-HITS",
+                    "title": "Leather Belt",
+                    "categories": "Belts",
+                    "features": "everyday casual outdoor accessory gift",
+                    "details": {}, "store": "Example", "description": [],
+                },
+            ],
+            gazetteer={"category": {"belt": 2}, "color": {"black": 1}, "material": {"leather": 1}},
+        )
+
+        response = agent.respond(
+            "session",
+            "I want a black leather belt, something everyday casual outdoor",
+            1,
+            2,
+        )
+
+        self.assertEqual(
+            [{"parent_asin": "ALL-MATCH"}, {"parent_asin": "MORE-HITS"}],
+            response["recommendations"],
+        )

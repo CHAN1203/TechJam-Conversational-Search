@@ -8,8 +8,8 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E11 Popularity Prior, with public HitRate@10 `0.965`,
-> MRR `0.662125`, MTTC `2.965`, and TechnicalScore `0.841838`.
+> Current best: E13 Buying/Browsing Routing, with public HitRate@10 `0.970`,
+> MRR `0.671744`, MTTC `2.930`, and TechnicalScore `0.847923`.
 
   Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
   recording another method.
@@ -39,8 +39,9 @@
 | E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
 | E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
-| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | **Current best** | `52789c4` |
+| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
 | E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | **Current best** | Local, not pushed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -69,6 +70,7 @@
 | E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
 | E11 Popularity prior | 0.9500 | **1.0000** | **0.933333** | 0.9000 |
 | E12 Phrase-independent override | 0.9500 | 0.9875 | **0.933333** | 0.9000 |
+| E13 Buying/Browsing routing | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -517,6 +519,63 @@
   experiment to one idea; it requires plumbing the previous turn's
   `ask_attribute` into `respond()`. Evidence:
   [phrase-independent override](../reports/experiments/phrase-independent-override.md).
+
+### T17: Buying/Browsing routing (current best)
+
+- Date: 2026-08-29
+- Origin: `TechJam.docx` lists Intent-Aware Routing (Buying vs. Browsing) as
+  an unimplemented Layer 3 option. This project's own T13
+  (`slot-memory-and-retrieval-ablation.md`) had already measured that every
+  setting which helped Intent Override (pool 500, catalog IDF) hurt
+  Browsing, and named routing -- untried until now -- as the way out of
+  that tradeoff.
+- Hypothesis: a Buying customer discloses a concrete constraint on the
+  opening turn (`docs/competition_specification.md`). E1's field-weighted
+  reranker already rewards matching more terms, but treats every term
+  independently, so a candidate with several cheap, tangential matches can
+  outscore one that satisfies every constraint actually stated. Classify
+  the session once, at turn 1, and reward complete constraint matches only
+  on that path.
+- Change: `_classify_route()` in `starter/agent.py`, called once at turn 1
+  from the `message_slots` already computed that turn, cached per session.
+  Buying sessions pass `required_terms` (this turn's known non-durable slot
+  terms, intersected with the actual query terms) and
+  `completeness_bonus=4.0` to `rerank_candidates`; Browsing sessions pass
+  neither, which is a no-op by construction. `starter/reranker.py` gains
+  `required_terms`/`completeness_bonus`, read off the same per-term field
+  weights already computed for scoring -- no second text scan.
+- New tests: 10 (4 in `test_reranker.py::CompletenessBonusTest`, 6 in
+  `test_conversation_state.py::BuyingBrowsingRoutingTest`), covering
+  classification, freezing at turn 1, the reranker mechanism in isolation,
+  and an end-to-end ranking-flip test. All red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: HitRate@10 `0.970`, MRR `0.671744`, MTTC `2.930`, TechnicalScore
+  `0.847923` (E11 was `0.841838`, `+0.006085`).
+- Scenario: buying `0.9500 -> 0.9625` (one more session; MRR also rises,
+  `0.696905 -> 0.720952` -- items already found now rank higher too).
+  Browsing `1.0000`, intent_override `0.933333`, boundary `0.9000` are all
+  **identical to E11 down to the last digit** -- not a coincidence, the
+  intended isolation: those sessions classify as Browsing, where the bonus
+  never fires.
+- Decision: **Keep. New current best.** Every scenario holds or improves;
+  none regresses at all.
+- Commit/branch: local commit on `experiment/buying-browsing-routing`, not
+  pushed to the shared remote.
+- Limitations and next step: the bonus weight (`4.0`) is one reasoned value,
+  not swept -- a validation-split sweep (same method as `popularity-prior.md`)
+  is the natural next step if a stronger weight is worth chasing. The
+  Buying/Browsing classifier only looks at the opening message; a session
+  that starts vague and firms up a hard constraint on turn 2 stays
+  Browsing-routed for its entire conversation, which is a direct, deliberate
+  reading of the scenario spec but is itself untested against a "reclassify
+  if a constraint firms up later" alternative. Evidence:
+  [buying/browsing routing](../reports/experiments/buying-browsing-routing.md).
 
   ## 5. Current automated test coverage
 

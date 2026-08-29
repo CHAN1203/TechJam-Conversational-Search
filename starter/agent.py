@@ -77,6 +77,22 @@ def _is_intent_override(message: str) -> bool:
     return lowered.startswith("actually") and "ignore my earlier preference" in lowered
 
 
+# One title-weight unit (FIELD_WEIGHTS["title"] in starter/reranker.py). Large
+# enough to outweigh a handful of cheap, single-field matches elsewhere, small
+# enough that a candidate missing several field-weighted terms cannot win on
+# completeness alone.
+COMPLETENESS_BONUS = 4.0
+
+
+def _classify_route(message_slots: dict[str, list[str]]) -> str:
+    """Buying discloses a concrete constraint on the opening turn; Browsing
+    starts vague (docs/competition_specification.md). Category/department
+    describe the item itself, not a preference, so they don't count."""
+    if any(slot not in DURABLE_SLOTS for slot in message_slots):
+        return "buying"
+    return "browsing"
+
+
 def _load_gazetteer(path: str | Path) -> dict[str, dict[str, int]]:
     """Load the mined slot vocabularies, degrading to lexical-only behaviour.
 
@@ -117,6 +133,7 @@ class Agent:
         self._session_profiles: dict[str, dict] = {}
         self._session_asked_attributes: dict[str, set[str]] = {}
         self._session_slots: dict[str, dict[str, dict[str, int]]] = {}
+        self._session_route: dict[str, str] = {}
         self._build_index()
 
     def _build_index(self) -> None:
@@ -190,6 +207,7 @@ class Agent:
         self._session_profiles[session_id] = user_profile
         self._session_asked_attributes[session_id] = set()
         self._session_slots[session_id] = {}
+        self._session_route.pop(session_id, None)
 
     def respond(
         self,
@@ -203,6 +221,8 @@ class Agent:
         current_terms = _constraint_terms(user_message)
         message_slots = extract_slots(user_message, self.gazetteer)
         accumulated_slots = self._session_slots.get(session_id, {})
+        if session_id not in self._session_route:
+            self._session_route[session_id] = _classify_route(message_slots)
         if _is_intent_override(user_message):
             # "Ignore my earlier preference" revokes what the customer
             # volunteered on the opening turn. It does not revoke the answers
@@ -235,6 +255,20 @@ class Agent:
         self._session_slots[session_id] = accumulated_slots
         unique_terms = list(dict.fromkeys([*previous_terms, *current_terms]))[:40]
         self._session_terms[session_id] = unique_terms
+        required_terms: set[str] = set()
+        if self._session_route[session_id] == "buying":
+            # Read off the same slot memory the override logic already
+            # maintains; intersect with this turn's actual query terms so a
+            # normalization difference (e.g. gazetteer singularization) can
+            # never ask the reranker to require a term that isn't there.
+            slot_terms = {
+                token
+                for slot, terms in accumulated_slots.items()
+                if slot not in DURABLE_SLOTS
+                for term in terms
+                for token in _terms(term)
+            }
+            required_terms = slot_terms & set(unique_terms)
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
         if not expression:
             candidates: list[dict] = []
@@ -266,6 +300,8 @@ class Agent:
                     candidates,
                     top_k,
                     popularity_weight=self.popularity_weight,
+                    required_terms=required_terms,
+                    completeness_bonus=COMPLETENESS_BONUS,
                 )
             ]
         asked = self._session_asked_attributes[session_id]

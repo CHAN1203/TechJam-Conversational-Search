@@ -127,3 +127,49 @@ class PopularityPriorTest(unittest.TestCase):
             rerank_candidates(["leather", "buckle"], candidates, 2),
             ["OBSCURE", "POPULAR"],
         )
+
+
+class CompletenessBonusTest(unittest.TestCase):
+    def test_matching_every_required_term_outranks_more_individual_matches(self) -> None:
+        # MORE-HITS matches more individual query terms overall (three cheap
+        # feature-field words) and out-scores ALL-MATCH without the bonus --
+        # but it is missing "black" entirely, one of the three things a
+        # Buying customer actually asked for. ALL-MATCH satisfies every
+        # required term and should win once completeness is rewarded.
+        candidates = [
+            {
+                "parent_asin": "ALL-MATCH",
+                "title": "Black Leather Belt",
+                "categories": "", "features": "", "details": "", "store": "",
+                "description": "",
+            },
+            {
+                "parent_asin": "MORE-HITS",
+                "title": "Leather Belt",
+                "categories": "", "features": "everyday casual outdoor", "details": "",
+                "store": "", "description": "",
+            },
+        ]
+        query_terms = ["black", "leather", "belt", "everyday", "casual", "outdoor"]
+
+        without_bonus = rerank_candidates(query_terms, candidates, top_k=2)
+        self.assertEqual(["MORE-HITS", "ALL-MATCH"], without_bonus)
+
+        with_bonus = rerank_candidates(
+            query_terms,
+            candidates,
+            top_k=2,
+            required_terms={"black", "leather", "belt"},
+            completeness_bonus=4.0,
+        )
+        self.assertEqual(["ALL-MATCH", "MORE-HITS"], with_bonus)
+
+    def test_omitting_required_terms_leaves_ranking_unchanged(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "leather"},
+            {"parent_asin": "B", "title": "leather belt"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, completeness_bonus=4.0),
+            ["B", "A"],
+        )
