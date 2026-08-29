@@ -38,6 +38,7 @@ previous retained method.
 | E8-B | Catalog IDF + pool 500 | Weight with catalog-wide `fts5vocab` document frequency | 54 during experiment | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | Reject | Included in remote series |
 | E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
 | E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | **Current best** | `c1941f6` merge series |
+| E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 
 The E1-A targeted test completed a red-green cycle. The behavior was then
 removed because the evaluator regressed, so it is not in the final test suite
@@ -63,6 +64,7 @@ or a Git commit. The failed result remains in this matrix.
 | E8-B Catalog IDF + pool 500 | 0.8625 | 0.8875 | 0.666667 | 0.9000 |
 | E8-C Catalog IDF + pool 100 | 0.8625 | 0.9000 | **0.733333** | 0.9000 |
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
+| E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
 
 This table cannot prove private-set performance. It identifies which scenario
 regressed so that an aggregate improvement does not hide a worse user experience.
@@ -376,6 +378,30 @@ tested a reranker before adding dense retrieval.
 - Limitation: this is still the 200-session public set, including only 30 Intent
   Override sessions. Private-set behavior is unverified.
 - Commit: merged to remote main in `c1941f6`.
+
+- Date: 2026-08-29
+- Hypothesis: T12's 2x2 shows IDF improves intent_override but hurts browsing. Browsing never sends
+  override, so by placing IDF behind the agent's own observable signal of "override detected,"
+  we should be able to capture the gain without paying the cost.
+- Change: `_session_override_seen` records per-session whether an override has appeared; once it
+  appears, rerank for the rest of that session is passed `_catalog_idf`, otherwise it's passed `None`.
+- Route isolation verified: boundary `0.9000`, browsing `0.9625`, buying `0.8750`
+  are **identical item-for-item** to E9, and MTTC is also identical. The branch only fires
+  where it's supposed to.
+- Result: intent_override `0.766667 -> 0.733333` (one fewer hit),
+  MTTC `7.200 -> 7.567`, TechnicalScore `0.747917 -> 0.745112`.
+- Key evidence: intent_override under IDF is `0.733333` on both **contaminated gazetteer** (E8-C)
+  and **clean gazetteer** (E10) — exactly the same; whereas the no-IDF baseline, after fixing the
+  contamination, rises from `0.633333` to `0.766667`. This shows IDF is not an additive gain but a
+  **substitute** for the contamination fix: both are correcting the same problem (indiscriminate
+  words getting equal weight). Once the slots are clean, IDF has nothing left to do — it just
+  reimposes its own ceiling.
+- Side observation: MRR actually rises `+0.002652` while HitRate drops. When IDF hits, it ranks
+  higher — but there are fewer hits. It shifts weight toward rare words: a gain when the word
+  matches, nothing when it doesn't.
+- Decision: retire it. The routing mechanism itself is correct and clean; the problem is that IDF
+  adds no incremental value for this task. Reverted — `starter/agent.py` is now byte-identical to E9.
+- Commit: not committed (record only).
 
 ## 5. Current automated test coverage
 

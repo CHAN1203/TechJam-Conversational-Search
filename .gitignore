@@ -17,8 +17,13 @@ secure/
 docs/audits/
 docs/data_selection_audit.md
 docs/participant_release_checklist.md
+docs/superpowers
 # Organizer-only pipeline tests.
 tests/test_5core_builder.py
 tests/test_organizer_pipeline.py
 *.log
 venv
+# Session viewer (development-only tool).
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
