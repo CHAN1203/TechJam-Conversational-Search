@@ -39,6 +39,7 @@ previous retained method.
 | E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
 | E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | **Current best** | `c1941f6` merge series |
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
+| E11 | Popularity prior | rerank 加入 `1.2 * log1p(rating_number)` | 51 | **0.965** | +0.070 | **0.662125** | **2.965** | 0.8035 | **0.841838** | **+0.093921** | **当前最佳** | 未提交 |
 
 The E1-A targeted test completed a red-green cycle. The behavior was then
 removed because the evaluator regressed, so it is not in the final test suite
@@ -65,6 +66,7 @@ or a Git commit. The failed result remains in this matrix.
 | E8-C Catalog IDF + pool 100 | 0.8625 | 0.9000 | **0.733333** | 0.9000 |
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
 | E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
+| E11 Popularity prior | 0.9500 | **1.0000** | **0.933333** | 0.9000 |
 
 This table cannot prove private-set performance. It identifies which scenario
 regressed so that an aggregate improvement does not hide a worse user experience.
@@ -487,4 +489,5 @@ New experiment template:
 - [Clarification policy ablation](../reports/experiments/clarification-ablation.md)
 - [Balanced clarification experiment](../reports/experiments/balanced-clarification.md)
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
+- [Popularity prior](../reports/experiments/popularity-prior.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)
