@@ -499,6 +499,44 @@
   `0.9000` across every weight, so those sessions are limited by something else.
 - Commit: `52789c4`. Evidence: [popularity prior](../reports/experiments/popularity-prior.md).
 
+### T16: Coverage-stress dual evaluation (diagnostic environment)
+
+- Date: 2026-08-30.
+- Commands: `python -m scripts.build_coverage_stress_catalog` and
+  `python -m scripts.run_dual_catalog_evaluation --output reports\\experiments\\coverage-stress-baseline.json`.
+- Construction: all 50,000 catalog rows and all 200 distinct public targets
+  matched. Target coverage changed from original to stress as follows: details
+  `200 -> 193` (7 masked), store `200 -> 199` (1), features `200 -> 179` (21),
+  description `89 -> 89` (15 unfillable shortfall), and price `178 -> 42` (136);
+  title, categories, average rating, and rating count remain `200/200`.
+- Tests: 88 automated tests passed before and after generation. The generated
+  catalog hash was `f0a1e6381f613409fee279db7d25f6b7603e46f6952b2ae7f3c10635447630a5`
+  on two consecutive builds. Identifier order, non-target records, planned
+  counts, and no-fill invariants passed.
+- Official overall: HitRate@10 `0.965`, MRR `0.662125`, MTTC `2.965`,
+  Efficiency `0.8035`, TechnicalScore `0.841838`. Coverage-stress overall:
+  `0.965`, `0.682284`, `2.915`, `0.8085`, `0.848885`; deltas are `+0.000`,
+  `+0.020159`, `-0.050`, `+0.0050`, and `+0.007047` respectively.
+- Scenarios (official -> stress, HitRate@10 / MRR / MTTC): Buying
+  `0.9500 / 0.696905 / 2.2875 -> 0.9500 / 0.714940 / 2.2750`; Browsing
+  `1.0000 / 0.665595 / 2.8250 -> 1.0000 / 0.688408 / 2.7625`; Intent Override
+  `0.933333 / 0.587685 / 4.933333 -> 0.933333 / 0.601852 / 4.933333`; Boundary
+  `0.9000 / 0.579444 / 3.6000 -> 0.9000 / 0.613333 / 3.2000`.
+- Smoke checks: both `python -m scripts.run_clarification_ablation --policies candidate`
+  and `python -m scripts.run_popularity_sweep --weights 1.2` emitted official,
+  coverage-stress, and delta payloads.
+- Decision: keep this as a diagnostic evaluation environment, not an Agent
+  method. Official metrics remain primary. Stress changes retrieval-visible
+  metadata and evaluator-materialized customer disclosures, matches marginal
+  presence only, leaves description at `89/200` because filling is forbidden,
+  does not correct public-target popularity bias, and cannot forecast private
+  results.
+- Evidence: [manifest](../reports/experiments/coverage-stress-catalog.json),
+  [dual result](../reports/experiments/coverage-stress-baseline.json),
+  [report](../reports/experiments/coverage-stress-dual-evaluation.md),
+  [design](designs/2026-08-29-coverage-stress-dual-evaluation-design.md), and
+  [plan](plans/2026-08-29-coverage-stress-dual-evaluation.md).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |

@@ -124,6 +124,28 @@ python -m evaluator.local_evaluator
 Record the exact command and raw JSON path. Never type remembered scores into a
 report when the JSON output is available.
 
+### Coverage-stress sensitivity diagnostic
+
+Use the generated catalog only as a second, public-target-aware diagnostic
+environment. These commands run both the official catalog and the coverage-stress
+catalog by default:
+
+```powershell
+python -m scripts.run_dual_catalog_evaluation
+python -m scripts.run_clarification_ablation --policies candidate
+python -m scripts.run_popularity_sweep --weights 1.2
+```
+
+For historical reproduction of official results only, use:
+
+```powershell
+python -m scripts.run_dual_catalog_evaluation --catalog-mode official
+```
+
+Official metrics select methods. Stress metrics reveal metadata sensitivity; no
+combined score is valid. The stress catalog is not an official catalog or a
+submission artifact, and it cannot forecast private-evaluation performance.
+
 ## Step 5: Update the evidence
 
 Every experiment, including a failed one, must update:
