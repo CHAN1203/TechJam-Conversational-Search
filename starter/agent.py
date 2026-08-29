@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 from pathlib import Path
 
 from starter.clarification import select_attribute
+from starter.slots import extract_slots
 from starter.reranker import rerank_candidates
 
 
@@ -16,6 +18,12 @@ STOPWORDS = {
     "that", "the", "this", "to", "want", "with", "would", "you", "looking",
 }
 CANDIDATE_POOL_SIZE = 100
+# An intent override replaces a preference, not the thing being shopped for.
+# These slots describe the item itself, so they survive the override unless the
+# customer names a replacement for them in the same message.
+DURABLE_SLOTS = ("category", "department")
+# Constraints volunteered on the opening turn are what an override revokes.
+OPENING_TURN = 1
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -64,6 +72,27 @@ def _is_intent_override(message: str) -> bool:
     return lowered.startswith("actually") and "ignore my earlier preference" in lowered
 
 
+def _load_gazetteer(path: str | Path) -> dict[str, dict[str, int]]:
+    """Load the mined slot vocabularies, degrading to lexical-only behaviour.
+
+    The scored path must never fail because a derived asset is absent, so a
+    missing or unreadable file yields an empty gazetteer and the agent keeps
+    working exactly as it did before slots existed.
+    """
+    try:
+        with Path(path).open(encoding="utf-8") as handle:
+            loaded = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {
+        str(slot): {str(term): int(count) for term, count in terms.items()}
+        for slot, terms in loaded.items()
+        if isinstance(terms, dict)
+    }
+
+
 class Agent:
     """Offline multi-turn retrieval agent with no LLM dependency."""
 
@@ -71,13 +100,16 @@ class Agent:
         self,
         catalog_path: str | Path = "data/catalog.jsonl",
         clarification_policy: str = "candidate",
+        gazetteer_path: str | Path = "data/gazetteer.json",
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
+        self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
         self._session_terms: dict[str, list[str]] = {}
         self._session_profiles: dict[str, dict] = {}
         self._session_asked_attributes: dict[str, set[str]] = {}
+        self._session_slots: dict[str, dict[str, dict[str, int]]] = {}
         self._build_index()
 
     def _build_index(self) -> None:
@@ -86,6 +118,9 @@ class Agent:
             "CREATE VIRTUAL TABLE products USING fts5("
             "parent_asin UNINDEXED, title, categories, features, details, store, description, "
             "tokenize='unicode61 remove_diacritics 2')"
+        )
+        cursor.execute(
+            "CREATE VIRTUAL TABLE product_vocab USING fts5vocab(products, 'row')"
         )
         batch: list[tuple[str, str, str, str, str, str, str]] = []
         with self.catalog_path.open(encoding="utf-8") as handle:
@@ -108,12 +143,39 @@ class Agent:
         if batch:
             cursor.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?)", batch)
         self.connection.commit()
+        self.document_count = self.connection.execute(
+            "SELECT count(*) FROM products"
+        ).fetchone()[0]
+
+    def _catalog_idf(self, terms: list[str]) -> dict[str, float]:
+        """Weight each query term by how rare it is across the whole catalog.
+
+        Document frequency comes from the FTS5 vocabulary table, so it is the
+        real catalog-wide count and costs no extra pass over the data. It must
+        not be derived from the retrieved candidates: those are the documents
+        the query already matched, so its most important term would look
+        ubiquitous there and be penalised.
+        """
+        if not terms:
+            return {}
+        placeholders = ", ".join("?" for _ in terms)
+        rows = self.connection.execute(
+            f"SELECT term, doc FROM product_vocab WHERE term IN ({placeholders})",
+            terms,
+        ).fetchall()
+        frequencies = {str(term): int(doc) for term, doc in rows}
+        total = self.document_count or 1
+        return {
+            term: math.log(1.0 + total / (1.0 + frequencies.get(term, 0)))
+            for term in terms
+        }
 
     def reset(self, session_id: str, user_profile: dict) -> None:
         # The profile is anonymized and may be used for personalization.
         self._session_terms[session_id] = []
         self._session_profiles[session_id] = user_profile
         self._session_asked_attributes[session_id] = set()
+        self._session_slots[session_id] = {}
 
     def respond(
         self,
@@ -125,7 +187,38 @@ class Agent:
         if session_id not in self._session_terms:
             raise RuntimeError("reset must be called before respond")
         current_terms = _constraint_terms(user_message)
-        previous_terms = [] if _is_intent_override(user_message) else self._session_terms[session_id]
+        message_slots = extract_slots(user_message, self.gazetteer)
+        accumulated_slots = self._session_slots.get(session_id, {})
+        if _is_intent_override(user_message):
+            # "Ignore my earlier preference" revokes what the customer
+            # volunteered on the opening turn. It does not revoke the answers
+            # they gave when the agent asked, and it does not revoke the item
+            # they are shopping for. Slots this message replaces are dropped.
+            accumulated_slots = {
+                slot: {
+                    term: arrived
+                    for term, arrived in terms.items()
+                    if slot in DURABLE_SLOTS or arrived > OPENING_TURN
+                }
+                for slot, terms in accumulated_slots.items()
+                if slot not in message_slots
+            }
+            accumulated_slots = {
+                slot: terms for slot, terms in accumulated_slots.items() if terms
+            }
+            previous_terms = [
+                token
+                for terms in accumulated_slots.values()
+                for term in terms
+                for token in _terms(term)
+            ]
+        else:
+            previous_terms = self._session_terms[session_id]
+        for slot, terms in message_slots.items():
+            retained = accumulated_slots.setdefault(slot, {})
+            for term in terms:
+                retained.setdefault(term, turn)
+        self._session_slots[session_id] = accumulated_slots
         unique_terms = list(dict.fromkeys([*previous_terms, *current_terms]))[:40]
         self._session_terms[session_id] = unique_terms
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
