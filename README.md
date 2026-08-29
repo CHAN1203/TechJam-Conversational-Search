@@ -64,6 +64,13 @@ python -m scripts.analyze_catalog
 The generated JSON evidence and interpretation are recorded in
 [`reports/baseline/diagnostic-summary.md`](reports/baseline/diagnostic-summary.md).
 
+## Current Best Experiment
+
+The deterministic local field reranker improves public-set HitRate@10 from
+`0.125` to `0.160` and TechnicalScore from `0.106710` to `0.133825`. See
+[`reports/experiments/local-reranker-v1.md`](reports/experiments/local-reranker-v1.md)
+for the method, per-scenario results, and rejected rank-prior ablation.
+
 ## Agent Interface
 
 ```python

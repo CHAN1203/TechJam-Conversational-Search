@@ -5,6 +5,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+from starter.reranker import rerank_candidates
+
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 STOPWORDS = {
@@ -12,6 +14,7 @@ STOPWORDS = {
     "i", "in", "is", "it", "me", "my", "of", "on", "or", "please", "some",
     "that", "the", "this", "to", "want", "with", "would", "you", "looking",
 }
+CANDIDATE_POOL_SIZE = 100
 
 
 def _text(value: object) -> str:
@@ -89,11 +92,27 @@ class Agent:
             recommendations: list[dict] = []
         else:
             rows = self.connection.execute(
-                "SELECT parent_asin FROM products WHERE products MATCH ? "
+                "SELECT parent_asin, title, categories, features, details, store, description "
+                "FROM products WHERE products MATCH ? "
                 "ORDER BY bm25(products, 0.0, 6.0, 4.0, 2.5, 2.5, 1.5, 1.0) LIMIT ?",
-                (expression, top_k),
+                (expression, max(top_k, CANDIDATE_POOL_SIZE)),
             ).fetchall()
-            recommendations = [{"parent_asin": str(row[0])} for row in rows]
+            candidates = [
+                {
+                    "parent_asin": row[0],
+                    "title": row[1],
+                    "categories": row[2],
+                    "features": row[3],
+                    "details": row[4],
+                    "store": row[5],
+                    "description": row[6],
+                }
+                for row in rows
+            ]
+            recommendations = [
+                {"parent_asin": parent_asin}
+                for parent_asin in rerank_candidates(unique_terms, candidates, top_k)
+            ]
         return {
             "message": "Here are the closest matches I found.",
             "ask_attribute": None,
