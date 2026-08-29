@@ -8,6 +8,7 @@ from unittest import mock
 
 from analysis.coverage_stress import (
     FieldMaskPlan,
+    _validate_generated_catalog,
     apply_masks_to_product,
     build_coverage_stress_catalog,
     file_sha256,
@@ -235,6 +236,47 @@ class CoverageStressBuildTest(unittest.TestCase):
                         catalog_path, dataset_path, output_path, manifest_path, self.fields, "fixed"
                     )
             self.assertEqual(valid_hash, file_sha256(output_path))
+
+    def test_manifest_requires_each_named_invariant_to_be_true(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            catalog_path, dataset_path, output_path, manifest_path = self._write_fixture(Path(directory))
+            build_coverage_stress_catalog(
+                catalog_path, dataset_path, output_path, manifest_path, self.fields, "fixed"
+            )
+            valid_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            missing_invariant = dict(valid_manifest)
+            missing_invariant["invariants"] = dict(valid_manifest["invariants"])
+            del missing_invariant["invariants"]["no_fields_filled"]
+            manifest_path.write_text(json.dumps(missing_invariant), encoding="utf-8")
+            self.assertFalse(manifest_is_current(
+                catalog_path, dataset_path, output_path, manifest_path, "fixed", self.fields
+            ))
+
+            false_invariant = dict(valid_manifest)
+            false_invariant["invariants"] = dict(valid_manifest["invariants"])
+            false_invariant["invariants"]["planned_counts_matched"] = False
+            manifest_path.write_text(json.dumps(false_invariant), encoding="utf-8")
+            self.assertFalse(manifest_is_current(
+                catalog_path, dataset_path, output_path, manifest_path, "fixed", self.fields
+            ))
+
+    def test_validation_rejects_swapped_target_mask_with_same_aggregate_count(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog_path, dataset_path, output_path, manifest_path = self._write_fixture(root)
+            build_coverage_stress_catalog(
+                catalog_path, dataset_path, output_path, manifest_path, self.fields, "fixed"
+            )
+            source_rows = [json.loads(line) for line in catalog_path.read_text(encoding="utf-8").splitlines()]
+            generated_rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+            generated_rows[0]["price"] = source_rows[0]["price"]
+            generated_rows[1]["price"] = None
+            tampered_path = root / "tampered.jsonl"
+            self._write_jsonl(tampered_path, generated_rows)
+            plans = plan_field_masks(source_rows, ("A", "B"), self.fields, "fixed")
+
+            with self.assertRaisesRegex(ValueError, "mask membership mismatch for field: price"):
+                _validate_generated_catalog(catalog_path, tampered_path, ("A", "B"), plans)
 
 
 if __name__ == "__main__":

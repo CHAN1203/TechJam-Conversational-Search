@@ -17,6 +17,12 @@ DEFAULT_FIELDS = (
     "title", "features", "description", "price", "categories",
     "details", "average_rating", "rating_number", "store",
 )
+REQUIRED_INVARIANTS = {
+    "ordered_identifiers_preserved": True,
+    "non_targets_preserved": True,
+    "no_fields_filled": True,
+    "planned_counts_matched": True,
+}
 
 
 @dataclass(frozen=True)
@@ -174,7 +180,13 @@ def _validate_generated_catalog(
                 raise ValueError(f"generated catalog changed unplanned field: {field}")
 
     generated_by_id = _index_products(generated)
+    source_by_id = _index_products(source)
     for field, plan in plans.items():
+        for parent_asin in target_ids:
+            original = source_by_id[parent_asin]
+            expected = apply_masks_to_product(original, {field: plan}).get(field)
+            if generated_by_id[parent_asin].get(field) != expected:
+                raise ValueError(f"generated catalog mask membership mismatch for field: {field}")
         final_count = sum(
             _present(generated_by_id[parent_asin].get(field))
             for parent_asin in target_ids
@@ -221,12 +233,7 @@ def _build_manifest(
         "distinct_target_count": len(set(target_ids)),
         "matched_target_count": len(set(target_ids)),
         "fields": field_manifest,
-        "invariants": {
-            "ordered_identifiers_preserved": True,
-            "non_targets_preserved": True,
-            "no_fields_filled": True,
-            "planned_counts_matched": True,
-        },
+        "invariants": dict(REQUIRED_INVARIANTS),
     }
 
 
@@ -285,7 +292,7 @@ def manifest_is_current(
             and manifest["source_catalog_sha256"] == file_sha256(source)
             and manifest["dataset_sha256"] == file_sha256(dataset)
             and manifest["output_catalog_sha256"] == file_sha256(output)
-            and all(manifest["invariants"].values())
+            and manifest["invariants"] == REQUIRED_INVARIANTS
         )
     except (OSError, ValueError, KeyError, TypeError):
         return False
