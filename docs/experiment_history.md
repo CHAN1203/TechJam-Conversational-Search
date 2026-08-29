@@ -8,8 +8,12 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E13 Buying/Browsing Routing, with public HitRate@10 `0.970`,
-> MRR `0.671744`, MTTC `2.930`, and TechnicalScore `0.847923`.
+> Current best: E15 Narrow Phrase-Independent Override, with public
+> HitRate@10 `0.970`, MRR `0.671744`, MTTC `2.930`, and TechnicalScore
+> `0.847923` -- identical to E13 on every measurable public-set session
+> (0/200 differ); E15 is the recommended default because it adds robustness
+> to a differently-worded override on the private set at zero measured cost,
+> not because the public score moved.
 
   Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
   recording another method.
@@ -41,8 +45,9 @@
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 | E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
 | E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
-| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | **Current best** | Local, not pushed |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E15 (same score, added robustness) | Local, not pushed |
 | E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
+| E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | **Keep (0/200 sessions differ from E13)** | Local, not pushed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -73,6 +78,7 @@
 | E12 Phrase-independent override | 0.9500 | 0.9875 | **0.933333** | 0.9000 |
 | E13 Buying/Browsing routing | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 | E14 Expected-value clarification | 0.9625 | 1.0000 | **0.966667** | 0.9000 |
+| E15 Narrow phrase-independent override | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -641,6 +647,69 @@
   helps them. Not attempted here, to keep this experiment to one idea.
   Evidence:
   [expected-value clarification](../reports/experiments/expected-value-clarification.md).
+
+### T19: Narrow phrase-independent override (current best)
+
+- Date: 2026-08-30
+- Origin: T16's rejected broad attempt ("any new term for an already-known
+  non-durable slot is a conflict") regressed one Browsing session
+  (`public_0172`): a `feature`-turn's word ("synthetic") lexically matched
+  the `material` gazetteer slot, and a later, real `material`-turn's answer
+  ("cotton") was misread as overriding it. That report's own next-step
+  suggestion -- gate the trigger on `slot == previous ask_attribute` -- was
+  checked by hand *before* writing any code and found not to actually fix
+  the regression: at the exact moment "cotton" conflicts with "synthetic",
+  the agent's own `last_asked` genuinely *was* `"material"`. The problem
+  was never which question is being asked *now*; it's where the *existing*
+  conflicting value came from *earlier*.
+- Hypothesis: track, per slot-term, whether that term was ever recorded in
+  a legitimate, on-topic context (opening turn, volunteered unprompted, or
+  a direct answer to that slot's own question). Only compare a new term
+  against *legitimately-established* existing terms when deciding whether
+  to trigger an override; a term that arrived purely as an incidental side
+  effect of a different question can never itself become "the thing to
+  override."
+- Change: `starter/agent.py` gains `self._session_last_asked` (this turn's
+  `ask_attribute`, for the next turn to read) and
+  `self._session_slot_topic` (per slot-term, a bool: "ever legitimate",
+  OR-accumulated across every mention of that term so a later unrelated
+  repeat cannot erase earned legitimacy, or vice versa). `_is_intent_override()`
+  gains a conflict path that only considers legitimate existing terms.
+  `self._session_slots`'s existing shape and everything that reads it
+  (the durable/`arrived > OPENING_TURN` survival filter) is untouched --
+  purely additive, parallel state.
+- New tests: 11, in `tests/test_conversation_state.py`
+  (`NarrowPhraseIndependentOverrideTest`) -- the `public_0172`-shaped
+  contamination case reproduced in miniature, the recovered
+  unprompted-paraphrase capability, and the three safety nets carried over
+  from T16's rejected attempt. All red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: **every metric and every scenario is identical to E13** on the
+  full 200-session public set. Verified at the session level, not just
+  aggregate: comparing `sessions[]` against E13's stored evidence JSON
+  gives 0 differing sessions out of 200.
+- Decision: **Keep. New current best**, in the sense of "the recommended
+  default going forward" -- not because the public score moved (it
+  provably cannot: the public simulator only ever phrases an override one
+  way), but because this closes a risk `slot-memory-and-retrieval-ablation.md`
+  and T16 both flagged, at a session-level-verified zero cost.
+- Commit/branch: local commit on
+  `experiment/narrow-phrase-independent-override`, not pushed to the
+  shared remote.
+- Limitations and next step: this is still narrower than "any conflict,
+  anywhere" -- a slot's first legitimate value can only be established on
+  the opening turn, when volunteered unprompted, or when directly asked
+  about. A genuine change of mind about something the customer stated
+  purely as contamination (never legitimately, on its own terms) still
+  cannot be detected; this is judged an acceptable, deliberate precision
+  tradeoff rather than a gap to close next. Evidence:
+  [narrow phrase-independent override](../reports/experiments/narrow-phrase-independent-override.md).
 
   ## 5. Current automated test coverage
 

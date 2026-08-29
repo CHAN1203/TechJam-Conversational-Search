@@ -72,9 +72,41 @@ def _constraint_terms(message: str) -> list[str]:
     return _terms(message)
 
 
-def _is_intent_override(message: str) -> bool:
+# A slot's existing term counts as an established value a later answer can
+# conflict with only if it was EVER recorded on the opening turn, volunteered
+# with no question pending, or given while this same slot was what had just
+# been asked. Anything else arrived purely as an incidental side effect of a
+# *different* question (e.g. "synthetic" answering a "feature" question but
+# lexically matching the "material" gazetteer slot) and was never really an
+# answer to this slot's own question. "Ever" (not "most recently") matters:
+# a term's legitimacy, once earned, should not be erased by a later,
+# unrelated, coincidental repeat mention in a different context.
+def _is_legitimate_topic(topic: str, slot: str) -> bool:
+    return topic in ("opening", "volunteered") or topic == slot
+
+
+def _is_intent_override(
+    message: str,
+    message_slots: dict[str, list[str]] | None = None,
+    accumulated_slots: dict[str, dict[str, int]] | None = None,
+    slot_topics: dict[str, dict[str, bool]] | None = None,
+) -> bool:
     lowered = message.lower()
-    return lowered.startswith("actually") and "ignore my earlier preference" in lowered
+    if lowered.startswith("actually") and "ignore my earlier preference" in lowered:
+        return True
+    if not (message_slots and accumulated_slots and slot_topics is not None):
+        return False
+    for slot, new_terms in message_slots.items():
+        if slot in DURABLE_SLOTS:
+            continue
+        existing = accumulated_slots.get(slot)
+        if not existing:
+            continue
+        topics_for_slot = slot_topics.get(slot, {})
+        legitimate_existing = {term for term in existing if topics_for_slot.get(term, False)}
+        if legitimate_existing and not (set(new_terms) & legitimate_existing):
+            return True
+    return False
 
 
 # One title-weight unit (FIELD_WEIGHTS["title"] in starter/reranker.py). Large
@@ -134,6 +166,8 @@ class Agent:
         self._session_asked_attributes: dict[str, set[str]] = {}
         self._session_slots: dict[str, dict[str, dict[str, int]]] = {}
         self._session_route: dict[str, str] = {}
+        self._session_last_asked: dict[str, str | None] = {}
+        self._session_slot_topic: dict[str, dict[str, dict[str, bool]]] = {}
         self._build_index()
 
     def _build_index(self) -> None:
@@ -208,6 +242,8 @@ class Agent:
         self._session_asked_attributes[session_id] = set()
         self._session_slots[session_id] = {}
         self._session_route.pop(session_id, None)
+        self._session_last_asked[session_id] = None
+        self._session_slot_topic[session_id] = {}
 
     def respond(
         self,
@@ -221,9 +257,14 @@ class Agent:
         current_terms = _constraint_terms(user_message)
         message_slots = extract_slots(user_message, self.gazetteer)
         accumulated_slots = self._session_slots.get(session_id, {})
+        slot_topics = self._session_slot_topic.setdefault(session_id, {})
+        # What this message is answering: the question asked last turn, or
+        # "opening"/"volunteered" if there wasn't one pending.
+        last_asked = self._session_last_asked.get(session_id)
+        topic = "opening" if turn == OPENING_TURN else (last_asked or "volunteered")
         if session_id not in self._session_route:
             self._session_route[session_id] = _classify_route(message_slots)
-        if _is_intent_override(user_message):
+        if _is_intent_override(user_message, message_slots, accumulated_slots, slot_topics):
             # "Ignore my earlier preference" revokes what the customer
             # volunteered on the opening turn. It does not revoke the answers
             # they gave when the agent asked, and it does not revoke the item
@@ -250,8 +291,11 @@ class Agent:
             previous_terms = self._session_terms[session_id]
         for slot, terms in message_slots.items():
             retained = accumulated_slots.setdefault(slot, {})
+            retained_topics = slot_topics.setdefault(slot, {})
+            legitimate_now = _is_legitimate_topic(topic, slot)
             for term in terms:
                 retained.setdefault(term, turn)
+                retained_topics[term] = retained_topics.get(term, False) or legitimate_now
         self._session_slots[session_id] = accumulated_slots
         unique_terms = list(dict.fromkeys([*previous_terms, *current_terms]))[:40]
         self._session_terms[session_id] = unique_terms
@@ -313,6 +357,7 @@ class Agent:
         )
         if ask_attribute is not None:
             asked.add(ask_attribute)
+        self._session_last_asked[session_id] = ask_attribute
         return {
             "message": ATTRIBUTE_QUESTIONS.get(
                 ask_attribute,

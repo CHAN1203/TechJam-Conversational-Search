@@ -416,3 +416,100 @@ class BuyingBrowsingRoutingTest(ConversationStateTest):
             [{"parent_asin": "ALL-MATCH"}, {"parent_asin": "MORE-HITS"}],
             response["recommendations"],
         )
+
+
+class NarrowPhraseIndependentOverrideTest(ConversationStateTest):
+    """A change of mind is a conflict with an established, on-topic value --
+    not any word that happens to land in the same gazetteer slot. A term
+    that arrived answering a *different* question (e.g. "synthetic"
+    answering a "feature" question, but lexically matching the "material"
+    slot) is not something a later, real answer to that slot's own question
+    can "override": it was never a legitimate value for that question in
+    the first place.
+    """
+
+    def test_off_topic_contamination_does_not_block_a_later_real_answer(self) -> None:
+        # Reproduces reports/experiments/phrase-independent-override.md's
+        # exact regression in miniature: "synthetic" arrives answering a
+        # "feature" question (profile order asks feature before material)
+        # but lexically matches "material". The later, genuine material
+        # answer ("cotton") must not be treated as overriding it.
+        agent = self.build_agent(
+            [],
+            profile={"preference_tags": ["comfort"]},
+            clarification_policy="profile",
+            gazetteer={"category": {"shoe": 1}, "material": {"synthetic": 1, "cotton": 1}},
+        )
+        first = agent.respond("session", "I want a shoe", 1, 1)
+        self.assertEqual("feature", first["ask_attribute"])
+
+        second = agent.respond("session", "For that, what matters is: synthetic sole.", 2, 1)
+        self.assertEqual("material", second["ask_attribute"])
+
+        agent.respond("session", "cotton please", 3, 1)
+
+        slots = agent._session_slots["session"]
+        self.assertIn("synthetic", slots.get("material", {}))
+        self.assertIn("cotton", slots.get("material", {}))
+
+    def test_unprompted_paraphrase_still_overrides_a_legitimate_value(self) -> None:
+        # "red" is established on the opening turn -- a legitimate value.
+        # No literal phrase here; this is the core capability the rejected
+        # broad attempt was trying to recover.
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"red": 1, "blue": 1}},
+        )
+        agent.respond("session", "I want a red shirt", 1, 1)
+        agent.respond("session", "I've changed my mind, blue please.", 2, 1)
+
+        slots = agent._session_slots["session"]
+        self.assertNotIn("red", slots.get("color", {}))
+        self.assertIn("blue", slots.get("color", {}))
+
+    def test_repeating_the_same_value_is_not_a_false_override(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={
+                "category": {"shirt": 1},
+                "color": {"red": 1, "blue": 1},
+                "style": {"casual": 1, "formal": 1},
+            },
+        )
+        agent.respond("session", "I want a casual red shirt", 1, 1)
+        agent.respond("session", "I definitely want red.", 2, 1)
+
+        self.assertIn("casual", agent._session_slots["session"].get("style", {}))
+
+    def test_a_brand_new_slot_is_not_a_false_override(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={
+                "category": {"shirt": 1},
+                "color": {"red": 1},
+                "material": {"cotton": 1},
+            },
+        )
+        agent.respond("session", "I want a red shirt", 1, 1)
+        agent.respond("session", "cotton please", 2, 1)
+
+        slots = agent._session_slots["session"]
+        self.assertIn("red", slots.get("color", {}))
+        self.assertIn("cotton", slots.get("material", {}))
+
+    def test_literal_override_phrase_still_works(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"red": 1, "blue": 1}},
+        )
+        agent.respond("session", "I want a red shirt", 1, 1)
+        agent.respond(
+            "session",
+            "Actually, ignore my earlier preference. What I need is: blue.",
+            2,
+            1,
+        )
+
+        slots = agent._session_slots["session"]
+        self.assertNotIn("red", slots.get("color", {}))
+        self.assertIn("blue", slots.get("color", {}))
