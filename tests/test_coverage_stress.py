@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from analysis.coverage_stress import apply_masks_to_product, plan_field_masks
+from analysis.coverage_stress import FieldMaskPlan, apply_masks_to_product, plan_field_masks
 
 
 class CoverageStressPlanTest(unittest.TestCase):
@@ -53,6 +53,7 @@ class CoverageStressPlanTest(unittest.TestCase):
         self.assertEqual(1, plans["price"].desired_target_present)
         self.assertEqual(2, plans["price"].original_target_present)
         self.assertEqual(1, len(plans["price"].masked_ids))
+        self.assertEqual(frozenset({"A"}), plans["price"].masked_ids)
         self.assertEqual(2, plans["description"].desired_target_present)
         self.assertEqual(1, plans["description"].original_target_present)
         self.assertEqual(0, len(plans["description"].masked_ids))
@@ -71,6 +72,17 @@ class CoverageStressPlanTest(unittest.TestCase):
         self.assertEqual(["charlie"], masked[2]["description"])
         self.assertEqual(["delta"], masked[3]["description"])
         self.assertEqual(1, sum(row["price"] is not None for row in masked[:2]))
+
+        details_plan = FieldMaskPlan(
+            field="details",
+            catalog_present=4,
+            catalog_coverage=1.0,
+            desired_target_present=1,
+            original_target_present=1,
+            masked_ids=frozenset({"A"}),
+            unfillable_shortfall=0,
+        )
+        self.assertEqual({}, apply_masks_to_product(self.products[0], {"details": details_plan})["details"])
 
     def test_same_seed_produces_the_same_mask_ids(self) -> None:
         first = plan_field_masks(self.products, ("A", "B"), ("price",), "fixed")
