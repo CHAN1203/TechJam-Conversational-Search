@@ -60,6 +60,7 @@
 | E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Local, not pushed |
 | E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | Local, not pushed |
 | E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | **Current best** | Local, not pushed |
+| E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -95,6 +96,7 @@
 | E17 RRF hybrid retrieval | 0.9375 | 0.9750 | 0.900000 | 0.9000 |
 | E18 Semantic reranking score | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 | E19 Phrase (bigram) bonus | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
+| E20 Query-side stemming | 0.9375 | 0.9500 | 0.866667 | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -952,6 +954,60 @@
 - Limitations and next step: a full validation-split sweep could find a
   better weight than this 3-point triangulation. Evidence:
   [phrase bonus](../reports/experiments/phrase-bonus.md).
+
+### T24: Query-side stemming (rejected, mechanism traced -- 5th of 5 requested experiments)
+
+- Date: 2026-08-30
+- Origin: researched separately. `analysis/gazetteer.py::normalize_term`
+  already singularizes matched vocabulary terms, but only on the gazetteer
+  slot-extraction path. FTS5's `unicode61` tokenizer does no stemming on
+  either the index or query side, so a customer saying "shoes" cannot
+  match a catalog title that only says "shoe."
+- Hypothesis (recorded before implementation, and the part that turned out
+  wrong): adding each query term's singular form as an *extra* OR-term is
+  "a pure superset expansion... essentially risk-free," since no existing
+  term is ever removed.
+- Change: new `starter/stemming.py::expand_with_stems`, reusing
+  `normalize_term`. Applied to the FTS5 match expression and the
+  reranker's query terms; not to the stored accumulated term list.
+- New tests: 5 (4 `test_stemming.py`, 1 agent-integration). 126/126
+  project tests pass before the evaluator run.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: HitRate@10 `0.980 -> 0.930`, MRR `0.677607 -> 0.666079`
+  (comparison MRR shown against E19), MTTC `2.815 -> 3.170`, TechnicalScore
+  `0.868476 -> 0.821424` (`-0.047052`). Session-by-session: 2 recovered, 12
+  lost. Net -10.
+- **Root cause, traced precisely on `public_0028`:** without stemming, the
+  target sits at BM25 rank 95 of 100 from turn 3 onward -- barely inside
+  the pool. With stemming, the query gains `case`/`organizer`/`wallet`/
+  `matter` as extra terms; the target falls out of the top 100 entirely.
+  **The "risk-free superset" hypothesis was wrong**: retrieval is
+  `... MATCH ? ORDER BY bm25(...) LIMIT 100`, a fixed-size window, not an
+  unbounded list. Adding OR-terms doesn't just add ways for the true
+  target to match -- it makes *more of the other 50,000 products* qualify
+  and compete for the same 100 slots. A term is only actually risk-free to
+  add if it doesn't change who else qualifies, which query expansion does
+  not guarantee. This is the same fundamental failure mode E17 found with
+  RRF fusion (a borderline-but-correct candidate evicted before the
+  reranker runs), reached here by a completely different mechanism
+  (broadening one query's match criteria, not merging two ranked lists).
+- Decision: **Reject.** Confirms, via a second independent mechanism, the
+  same lesson E17 already taught: this project's fixed-size retrieval
+  cutoff is more fragile to *any* recall-broadening change than it first
+  appears.
+- Commit/branch: `review/query-stemming-implementation` (implementation
+  and tests preserved, not merged into the default).
+- Limitations and next step: a version that only expands terms *within* an
+  already-retrieved candidate's scoring (matching E18/E19's shape --
+  reranking-only, not retrieval-broadening) would avoid this exact failure
+  mode; not attempted here, to test the direct approach first. Evidence:
+  [query-side stemming](../reports/experiments/query-stemming.md).
 
   ## 5. Current automated test coverage
 
