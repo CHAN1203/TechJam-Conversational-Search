@@ -32,6 +32,7 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E8-B | Catalog IDF + pool 500 | fts5vocab 全库 df 加权 | 54 | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | 淘汰 | 未提交 |
 | E8-C | Catalog IDF + pool 100 | 同上，候选池保持 100 | 54 | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | 淘汰 | 未提交 |
 | E9 | Slot conflict resolution | gazetteer 每个词只归属一个槽位；pool 100、无 IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | **当前最佳** | 未提交 |
+| E10 | Override-routed IDF | 检测到 override 后才启用 catalog IDF，其余场景不变 | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | 淘汰 | 未提交 |
 
 `E1-A` 的 targeted test 曾完成 red-green，但对应行为因为 evaluator 回归而被
 删除，所以它没有进入最终测试套件或 Git commit。失败结果仍然保留在矩阵中。
@@ -55,6 +56,7 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E8-B Catalog IDF + pool 500 | 0.8625 | 0.8875 | 0.666667 | 0.9000 |
 | E8-C Catalog IDF + pool 100 | 0.8625 | 0.9000 | **0.733333** | 0.9000 |
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
+| E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
 
 这张表不能单独证明 private-set 表现。它的用途是找出回归发生在哪个场景，
 避免总分提升掩盖某一类用户体验变差。
@@ -331,6 +333,29 @@ HitRate@10。
 - 限制：仍然只是 200-session public set 的结果，intent_override 只有 30 个 session。
   private set 未验证。
 - Commit：未提交。
+
+### T14：Override-routed IDF（淘汰）
+
+- 日期：2026-08-29
+- 假设：T12 的 2x2 显示 IDF 提升 intent_override、损害 browsing。browsing 从不发送
+  override，因此把 IDF 放在"检测到 override 之后"这个 agent 自己可观测的信号后面，
+  应该能只拿收益、不付代价。
+- 改变：`_session_override_seen` 逐 session 记录 override 是否出现；出现后本 session
+  的 rerank 传入 `_catalog_idf`，否则传 `None`。
+- 路由隔离性验证通过：boundary `0.9000`、browsing `0.9625`、buying `0.8750`
+  与 E9 **逐项完全相同**，MTTC 也完全相同。分支只在应该触发的地方触发。
+- 结果：intent_override `0.766667 -> 0.733333`（少命中 1 个），
+  MTTC `7.200 -> 7.567`，TechnicalScore `0.747917 -> 0.745112`。
+- 关键证据：IDF 下的 intent_override 在**污染 gazetteer**（E8-C）与**干净
+  gazetteer**（E10）上都是 `0.733333`，完全相同；而无 IDF 的基线在修好污染后
+  从 `0.633333` 升到 `0.766667`。说明 IDF 并非叠加收益，而是在**替代**污染修复：
+  两者纠正的是同一个问题（无区分度的词获得等权重）。槽位干净之后 IDF 无事可做，
+  只是重新施加了它自己的上限。
+- 附带观察：MRR 反而上升 `+0.002652`，而 HitRate 下降。IDF 命中时排得更靠前，
+  但命中次数更少——它把权重推向罕见词，词对时收益、词错时落空。
+- 决定：淘汰。路由机制本身是正确且干净的，问题在于 IDF 对本任务没有增量价值。
+  已回退，`starter/agent.py` 与 E9 逐字节相同。
+- Commit：未提交（仅记录）。
 
 ## 5. 当前自动测试覆盖
 
