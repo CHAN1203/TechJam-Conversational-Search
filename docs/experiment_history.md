@@ -7,8 +7,8 @@
 2. 每次具体改了什么？
 3. 哪个方法最好，为什么保留或淘汰？
 
-> 当前最佳：Conversation State v1，Public HitRate@10 `0.870`，
-> MRR `0.533748`，MTTC `4.565`，TechnicalScore `0.723824`。
+> 当前最佳：Candidate-aware Clarification，Public HitRate@10 `0.870`，
+> MRR `0.544236`，MTTC `4.410`，TechnicalScore `0.730071`。
 
 ## 1. 方法对比矩阵
 
@@ -20,7 +20,10 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E0 | Weak BM25 baseline | BM25 直接返回 Top-10；无状态；不提问 | 3 | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | 基线 | `3407835` |
 | E1 | Field reranker v1 | BM25 Top-100 后按字段覆盖重新排序 | 10 | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **保留** | `db65ad2` |
 | E1-A | Reranker + BM25 rank prior | 在 E1 分数上加入原 BM25 排名先验 | Targeted | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | 淘汰 | 未提交 |
-| E2 | Conversation State v1 | 累积约束、处理 override、profile 引导且不重复提问 | 14 | **0.870** | **+0.710** | **0.533748** | **4.565** | **0.6435** | **0.723824** | **+0.589999** | **当前最佳** | `d770b6f` |
+| E2 | Conversation State v1 | 累积约束、处理 override、profile 引导且不重复提问 | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | 保留 | `d770b6f` |
+| E3-A | Fixed clarification | 固定属性提问顺序 | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | 淘汰 | `fa84de2` |
+| E3-B | Profile clarification | E2 的 profile-first 策略，作为消融基准 | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | 旧基线 | `fa84de2` |
+| E3-C | Candidate-aware clarification | 优先询问 Top-100 候选中有覆盖且有差异的属性 | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | **当前最佳** | `fa84de2` |
 
 `E1-A` 的 targeted test 曾完成 red-green，但对应行为因为 evaluator 回归而被
 删除，所以它没有进入最终测试套件或 Git commit。失败结果仍然保留在矩阵中。
@@ -33,6 +36,9 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E1 Field reranker v1 | 0.2375 | 0.0875 | 0.133333 | 0.2000 |
 | E1-A + BM25 rank prior | 0.2250 | 0.0875 | 0.133333 | 0.2000 |
 | E2 Conversation State v1 | **0.8875** | **0.9625** | **0.533333** | **1.0000** |
+| E3-A Fixed clarification | 0.8750 | **0.9625** | 0.566667 | 0.9000 |
+| E3-B Profile clarification | **0.8875** | **0.9625** | 0.533333 | **1.0000** |
+| E3-C Candidate-aware clarification | 0.8750 | **0.9625** | **0.600000** | 0.9000 |
 
 这张表不能单独证明 private-set 表现。它的用途是找出回归发生在哪个场景，
 避免总分提升掩盖某一类用户体验变差。
@@ -129,7 +135,7 @@ HitRate@10。
 - 泄漏检查：`starter/` 不引用 `ground_truth`、`public_set`、`intent_card`
   或 evaluator behavior fields。
 - 结果：HitRate@10 `0.870`，TechnicalScore `0.723824`。
-- 决定：保留，为当前最佳。
+- 决定：保留，为当时最佳；后由 E3-C 取代。
 - Commit：`d770b6f`。
 - 详细证据：[conversation state v1](../reports/experiments/conversation-state-v1.md)。
 
@@ -142,6 +148,29 @@ HitRate@10。
   MTTC `4.565`、TechnicalScore `0.723824`。
 - 结论：新实验环境与稳定分支的基线一致，可以开始 clarification ablation。
 
+### T6：固定切分与 Clarification Policy Ablation
+
+- 日期：2026-08-29。
+- 用 seed `techjam-clarification-v1` 按 scenario/difficulty 将 public set 固定分为
+  120 development sessions 和 80 validation sessions。
+- 对比 fixed、profile、candidate 三种策略；其余检索、排序和状态逻辑不变。
+- 选择规则：只用 validation TechnicalScore 选胜者。
+- Validation score：fixed `0.750158`、profile `0.741824`、candidate
+  `0.755720`。
+- 决定：candidate 胜出并设为默认；fixed 淘汰，profile 保留为可选 ablation。
+- Full public：HitRate@10 `0.870`、MRR `0.544236`、MTTC `4.410`、
+  TechnicalScore `0.730071`。
+- 实现 commit：`fa84de2`。
+- 详细证据：[clarification policy ablation](../reports/experiments/clarification-ablation.md)。
+
+### T7：Candidate 策略性能复测
+
+- 初次完整运行：candidate `144.189s`，profile `82.447s`。
+- 优化：每个候选只进行一次文本分词，六种属性复用 token set。
+- 优化后 candidate：`88.492s`，全部指标与优化前逐项相同。
+- 自动测试增加到 21 个；默认 Agent 走 candidate 策略的行为由 integration test 锁定。
+- 官方 evaluator 默认入口复测得到 TechnicalScore `0.730071`。
+
 ## 5. 当前自动测试覆盖
 
 | 测试模块 | Tests | 保护的行为 |
@@ -151,8 +180,12 @@ HitRate@10。
 | `test_catalog_profile.py` | 1 | 空 collection 的 coverage 语义 |
 | `test_reranker.py` | 2 | 完整约束优先、tie 保持 BM25 顺序 |
 | `test_agent_reranking.py` | 1 | Agent 确实 rerank 更大的候选池 |
-| `test_conversation_state.py` | 4 | 累积、否定、override、非重复提问 |
-| **总计** | **14** | 当前完整回归套件 |
+| `test_conversation_state.py` | 6 | 累积、否定、override、非重复提问、策略选择与默认策略 |
+| `test_clarification.py` | 2 | fixed/profile 差异、candidate 的 grounded attribute 选择 |
+| `test_clarification_ablation.py` | 1 | 真实 FTS5 evaluator 上的多策略与切分整合 |
+| `test_experiment_split.py` | 1 | 固定切分大小、分层平衡、dev/validation 不重叠 |
+| `test_experiment_results.py` | 1 | split metrics、scenario metrics 与 TechnicalScore |
+| **总计** | **21** | 当前完整回归套件 |
 
 运行完整测试：
 
@@ -212,4 +245,5 @@ python -m evaluator.local_evaluator
 - [Baseline diagnostics](../reports/baseline/diagnostic-summary.md)
 - [Field reranker experiment](../reports/experiments/local-reranker-v1.md)
 - [Conversation state experiment](../reports/experiments/conversation-state-v1.md)
+- [Clarification policy ablation](../reports/experiments/clarification-ablation.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)

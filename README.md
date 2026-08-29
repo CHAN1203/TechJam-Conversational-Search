@@ -67,11 +67,12 @@ The generated JSON evidence and interpretation are recorded in
 ## Current Best Experiment
 
 The current offline agent combines the deterministic field reranker with
-multi-turn constraint state and profile-guided clarification. It improves
+multi-turn constraint state and candidate-aware clarification. It improves
 public-set HitRate@10 from `0.125` to `0.870` and TechnicalScore from
-`0.106710` to `0.723824`. See the
-[`conversation-state-v1` report](reports/experiments/conversation-state-v1.md)
-and the preceding
+`0.106710` to `0.730071`. See the
+[`clarification-ablation` report](reports/experiments/clarification-ablation.md),
+[`conversation-state-v1` report](reports/experiments/conversation-state-v1.md),
+and
 [`local-reranker-v1` report](reports/experiments/local-reranker-v1.md).
 The cumulative [experiment history and comparison matrix](docs/experiment_history.md)
 records every retained and rejected method, verification run, and future update rule.
