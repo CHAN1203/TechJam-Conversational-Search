@@ -30,6 +30,11 @@ OPENING_TURN = 1
 # Kept small enough that a better constraint match still outranks mere
 # popularity; it separates candidates that would otherwise tie.
 POPULARITY_WEIGHT = 1.2
+# Reasoned choice from a 3-point triangulation (0.5, 1.0, 2.0), not a full
+# validation-split sweep -- see reports/experiments/semantic-reranking.md.
+# 1.0 improved TechnicalScore with zero sessions flipping hit/miss; 2.0
+# regressed. A fuller sweep is a reasonable next step, not done here.
+SEMANTIC_WEIGHT = 1.0
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -125,11 +130,13 @@ class Agent:
         gazetteer_path: str | Path = "data/gazetteer.json",
         popularity_weight: float = POPULARITY_WEIGHT,
         retrieval_mode: str = "bm25",
+        semantic_weight: float = SEMANTIC_WEIGHT,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.popularity_weight = popularity_weight
         self.retrieval_mode = retrieval_mode
+        self.semantic_weight = semantic_weight
         self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
         self._session_terms: dict[str, list[str]] = {}
@@ -140,6 +147,9 @@ class Agent:
         self._build_index()
 
     def _build_index(self) -> None:
+        # Needed either as a retrieval route (E16/E17) or purely to score
+        # candidates that BM25 already retrieved (semantic reranking).
+        self._needs_dense_index = self.retrieval_mode in ("dense", "rrf") or self.semantic_weight != 0.0
         cursor = self.connection.cursor()
         cursor.execute(
             "CREATE VIRTUAL TABLE products USING fts5("
@@ -181,7 +191,7 @@ class Agent:
                     "description": fields[5],
                     "rating_number": self._popularity[parent_asin],
                 }
-                if self.retrieval_mode in ("dense", "rrf"):
+                if self._needs_dense_index:
                     dense_asins.append(parent_asin)
                     dense_texts.append(" ".join(fields))
                 if len(batch) >= 1000:
@@ -193,9 +203,7 @@ class Agent:
         self.document_count = self.connection.execute(
             "SELECT count(*) FROM products"
         ).fetchone()[0]
-        self.dense_index = (
-            DenseIndex(dense_asins, dense_texts) if self.retrieval_mode in ("dense", "rrf") else None
-        )
+        self.dense_index = DenseIndex(dense_asins, dense_texts) if self._needs_dense_index else None
 
     def _catalog_idf(self, terms: list[str]) -> dict[str, float]:
         """Weight each query term by how rare it is across the whole catalog.
@@ -322,6 +330,15 @@ class Agent:
         if not candidates:
             recommendations: list[dict] = []
         else:
+            semantic_scores: dict[str, float] = {}
+            if self.semantic_weight != 0.0 and self.dense_index is not None:
+                query_vector = self.dense_index.project(query_text)
+                if query_vector is not None:
+                    for candidate in candidates:
+                        asin = str(candidate["parent_asin"])
+                        doc_vector = self.dense_index.vector_for(asin)
+                        if doc_vector is not None:
+                            semantic_scores[asin] = float(query_vector @ doc_vector)
             recommendations = [
                 {"parent_asin": parent_asin}
                 for parent_asin in rerank_candidates(
@@ -331,6 +348,8 @@ class Agent:
                     popularity_weight=self.popularity_weight,
                     required_terms=required_terms,
                     completeness_bonus=COMPLETENESS_BONUS,
+                    semantic_scores=semantic_scores,
+                    semantic_weight=self.semantic_weight,
                 )
             ]
         asked = self._session_asked_attributes[session_id]

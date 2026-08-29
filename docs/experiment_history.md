@@ -8,8 +8,11 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E13 Buying/Browsing Routing, with public HitRate@10 `0.970`,
-> MRR `0.671744`, MTTC `2.930`, and TechnicalScore `0.847923`.
+> Current best: E18 Semantic Reranking Score, with public HitRate@10
+> `0.970`, MRR `0.677607`, MTTC `2.920`, and TechnicalScore `0.849882`.
+> Zero sessions change hit/miss status versus E13 -- the gain is purely a
+> ranking-quality improvement (9 sessions rank higher, 4 rank slightly
+> lower, among the same 194 already-correct sessions).
 >
 > E15 was reverted after review: its result is not an improvement on any
 > measurable metric (0/200 public sessions differ from E13). Its only
@@ -51,10 +54,12 @@
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 | E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
 | E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
-| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | **Current best** | Local, not pushed |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E18 | Local, not pushed |
 | E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
 | E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
 | E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Local, not pushed |
+| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Local, not pushed |
+| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | **Current best (0/200 sessions flip)** | Local, not pushed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -87,6 +92,8 @@
 | E14 Expected-value clarification | 0.9625 | 1.0000 | **0.966667** | 0.9000 |
 | E15 Narrow phrase-independent override | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 | E16 Dense retrieval (standalone) | 0.6750 | 0.6750 | 0.633333 | 0.6000 |
+| E17 RRF hybrid retrieval | 0.9375 | 0.9750 | 0.900000 | 0.9000 |
+| E18 Semantic reranking score | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -783,6 +790,118 @@
 - Limitations and next step: `n_components` and `max_features` are
   reasoned defaults, not swept. Evidence:
   [dense retrieval](../reports/experiments/dense-retrieval.md).
+
+### T21: RRF hybrid retrieval (rejected; mechanism traced)
+
+- Date: 2026-08-30
+- Origin: `TechJam.docx` Layer 1's third option -- fuse BM25's and dense's
+  leaderboards by Reciprocal Rank Fusion rather than replacing one with the
+  other. T20 found real, if narrow, complementary signal (2 unique dense
+  hits) motivating a genuine attempt at fusion.
+- Change: new `starter/fusion.py::reciprocal_rank_fusion` (standard RRF,
+  `k=60`). `Agent(retrieval_mode="rrf")` fetches BM25's and dense's top-100
+  independently, fuses, and truncates to the top 100 by fused rank -- that
+  set feeds the existing reranker unchanged. `bm25` mode internals
+  refactored into a shared `_bm25_rank()` helper, confirmed byte-identical
+  by regression test.
+- New tests: 8 (6 in `tests/test_fusion.py`, 2 agent-integration). One
+  test's own premise was wrong on inspection -- RRF's convex scoring means
+  extreme ranks {1,3} score marginally higher than middling ranks {2,2}, a
+  real property, not a bug -- corrected before trusting it. 107/107 project
+  tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --retrieval-mode rrf --output reports/experiments/rrf-hybrid-retrieval.json
+  ```
+
+- Result: HitRate@10 `0.945`, MRR `0.665696`, MTTC `3.065`, TechnicalScore
+  `0.830909` (E13: `0.847923`, `-0.017014`). Session-by-session: 1 recovered
+  (`public_0071`), 6 lost. Net -5.
+- **Root cause, traced precisely** on `public_0040` (an E13 rank-1 hit):
+  the target enters BM25's own top-100 at turn 6, but only at rank 72 --
+  not in dense's top-100 at all. E13's reranker evidently promotes a
+  mediocre-BM25-rank-but-correct candidate very effectively once it's in
+  the pool (rank 72 -> rank 1, via field weighting + completeness bonus +
+  popularity). Under RRF, the candidate *pool itself* is truncated to 100
+  by fused rank *before* the reranker runs: other products' joint
+  BM25+dense agreement pushes the target's fused rank outside the top 100
+  entirely, so the reranker never sees it. Not a reranking failure --
+  retrieval discarding a correct candidate to make room for one whose only
+  qualification is agreement between two lists, one of which (dense, E16:
+  TechnicalScore `0.600` standalone) is meaningfully noisier here.
+- Decision: **Reject.** Confirms E16's own predicted risk exactly: fusing a
+  much weaker signal into a much stronger one can demote good candidates as
+  easily as promote missed ones. Net here: 6 lost for 1 recovered.
+- Commit/branch: local commit on `experiment/rrf-hybrid-retrieval`, not
+  pushed.
+- Limitations and next step: take the **union** of both top-100 lists
+  (padding, not truncating) instead of truncating the fused ranking, so
+  dense can only ever add candidates BM25's own net missed, never displace
+  ones it already caught. Not attempted here, to test standard RRF as the
+  doc describes it first. Evidence:
+  [rrf hybrid retrieval](../reports/experiments/rrf-hybrid-retrieval.md).
+
+### T22: Semantic reranking score (current best)
+
+- Date: 2026-08-30
+- Origin: `TechJam.docx` Layer 2's Cross-Encoder Reranker option. A true
+  cross-encoder needs a transformer doing cross-attention between query and
+  candidate -- real per-turn latency risk at this project's scale (up to
+  100 candidates x 10 turns x 200 sessions). Tests the doc's *intent*
+  (semantic relevance beyond keyword-field-weight sums) using E16's
+  already-built, already-fast LSA vectors as a bi-encoder-style proxy --
+  explicitly disclosed as not a true cross-encoder.
+- Hypothesis: unlike E16/E17, this only adds a scoring term over the *same*
+  unchanged BM25 candidate set -- lower risk of E17's pool-eviction failure
+  mode, since retrieval itself doesn't change.
+- Change: `DenseIndex` gains `project()`/`vector_for()`. `rerank_candidates`
+  gains `semantic_scores`/`semantic_weight` (same pattern as
+  `popularity_weight`). `Agent` computes cosine similarity between the
+  query and each already-retrieved BM25 candidate, passed to the reranker.
+  New `SEMANTIC_WEIGHT = 1.0` default.
+- **Bug found and fixed mid-implementation:** defaulting `semantic_weight`
+  to nonzero meant the dense index now builds by default, and it crashed
+  (`ValueError: empty vocabulary`) on the empty-catalog fixture several
+  existing tests use to isolate conversation-state logic. Fixed with the
+  same principle `_load_gazetteer` uses: degrade to a no-op on a degenerate
+  input rather than fail the scored path. Caught by running the full test
+  suite before declaring green, not assumed.
+- New tests: 9 (4 `test_dense.py`, 3 `test_reranker.py`, 2 agent-integration).
+  One pre-existing test's name was corrected -- it claimed the default was
+  "unaffected," which stopped being true once the default weight changed;
+  rewritten to explicitly test `semantic_weight=0.0` opting back out.
+  109/109 project tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --semantic-weight 1.0 --output reports/experiments/semantic-reranking.json
+  python -m evaluator.local_evaluator   # confirms the plain default matches
+  ```
+
+- Triangulated three weights (not a full sweep): `0.5` -> TechnicalScore
+  `0.849534`; `1.0` -> `0.849882` (best); `2.0` -> `0.845118` (worse than
+  E13). Chose `1.0`.
+- Result: HitRate@10 `0.970` (unchanged), MRR `0.671744 -> 0.677607`, MTTC
+  `2.930 -> 2.920`, TechnicalScore `0.847923 -> 0.849882` (`+0.001959`).
+  **Zero sessions change hit/miss status** in either direction -- among the
+  194 already-correct sessions, 9 rank higher and 4 rank slightly lower.
+  Purely a ranking-quality effect, not a recall effect.
+- At weight `2.0`, the same failure mode E17 hit with RRF (demoting
+  genuinely correct candidates) reappears, just at the reranking stage
+  instead of retrieval -- consistent evidence that this project's dense/LSA
+  signal is real but must stay a *light* supplementary term.
+- Decision: **Keep. New current best.** `SEMANTIC_WEIGHT = 1.0` is now the
+  `Agent` default, confirmed with the plain, unmodified `Agent()`
+  construction.
+- Commit/branch: local commit on `experiment/semantic-reranking`, not
+  pushed.
+- Limitations and next step: a full validation-split sweep (same method as
+  `popularity-prior.md`) could find a better weight than this 3-point
+  triangulation did. Evidence:
+  [semantic reranking](../reports/experiments/semantic-reranking.md).
 
   ## 5. Current automated test coverage
 

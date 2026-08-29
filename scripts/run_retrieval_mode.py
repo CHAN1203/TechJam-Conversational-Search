@@ -14,6 +14,7 @@ def main() -> None:
     parser.add_argument("--catalog", default="data/catalog.jsonl")
     parser.add_argument("--dataset", default="data/public_set.jsonl")
     parser.add_argument("--retrieval-mode", default="bm25")
+    parser.add_argument("--semantic-weight", type=float, default=0.0)
     parser.add_argument("--output", default="results.json")
     args = parser.parse_args()
 
@@ -21,7 +22,11 @@ def main() -> None:
     catalog_ids, categories, products = catalog_index(args.catalog)
 
     started = time.perf_counter()
-    agent = Agent(args.catalog, retrieval_mode=args.retrieval_mode)
+    agent = Agent(
+        args.catalog,
+        retrieval_mode=args.retrieval_mode,
+        semantic_weight=args.semantic_weight,
+    )
     build_seconds = round(time.perf_counter() - started, 3)
 
     started = time.perf_counter()
@@ -29,6 +34,7 @@ def main() -> None:
     eval_seconds = round(time.perf_counter() - started, 3)
 
     result["retrieval_mode"] = args.retrieval_mode
+    result["semantic_weight"] = args.semantic_weight
     result["build_seconds"] = build_seconds
     result["eval_seconds"] = eval_seconds
 

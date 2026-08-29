@@ -459,3 +459,59 @@ class DenseRetrievalModeTest(ConversationStateTest):
         ])
         response = agent.respond("session", "red shirt", 1, 1)
         self.assertEqual([{"parent_asin": "SHIRT"}], response["recommendations"])
+
+
+class SemanticRerankingModeTest(ConversationStateTest):
+    def test_explicit_zero_semantic_weight_reproduces_pre_semantic_behavior(self) -> None:
+        # semantic_weight now defaults to SEMANTIC_WEIGHT (1.0), not 0 -- this
+        # confirms opting out (semantic_weight=0.0) still behaves as it did
+        # before this experiment, not that the default is unaffected.
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        products = [
+            {
+                "parent_asin": "SHIRT",
+                "title": "Red Shirt",
+                "categories": "Shirts", "features": "", "details": {},
+                "store": "Example", "description": [],
+            },
+        ]
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in products), encoding="utf-8"
+        )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text("{}", encoding="utf-8")
+        agent = Agent(catalog_path, gazetteer_path=gazetteer_path, semantic_weight=0.0)
+        agent.reset("session", {})
+        response = agent.respond("session", "red shirt", 1, 1)
+        self.assertEqual([{"parent_asin": "SHIRT"}], response["recommendations"])
+
+    def test_nonzero_semantic_weight_does_not_crash_and_still_finds_the_match(self) -> None:
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        products = [
+            {
+                "parent_asin": "SHIRT",
+                "title": "Red Shirt",
+                "categories": "Shirts", "features": "cotton", "details": {},
+                "store": "Example", "description": [],
+            },
+            {
+                "parent_asin": "JACKET",
+                "title": "Blue Jacket",
+                "categories": "Jackets", "features": "wool", "details": {},
+                "store": "Example", "description": [],
+            },
+        ]
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in products), encoding="utf-8"
+        )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text("{}", encoding="utf-8")
+
+        agent = Agent(catalog_path, gazetteer_path=gazetteer_path, semantic_weight=0.5)
+        agent.reset("session", {})
+        response = agent.respond("session", "red shirt", 1, 2)
+
+        asins = [item["parent_asin"] for item in response["recommendations"]]
+        self.assertIn("SHIRT", asins)

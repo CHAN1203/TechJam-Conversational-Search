@@ -129,6 +129,46 @@ class PopularityPriorTest(unittest.TestCase):
         )
 
 
+class SemanticScoreTest(unittest.TestCase):
+    def test_semantic_score_can_flip_a_lexical_tie(self) -> None:
+        candidates = [
+            {"parent_asin": "LOW_SIM", "title": "leather belt"},
+            {"parent_asin": "HIGH_SIM", "title": "leather belt"},
+        ]
+        ranked = rerank_candidates(
+            ["leather", "belt"],
+            candidates,
+            2,
+            semantic_scores={"LOW_SIM": 0.1, "HIGH_SIM": 0.9},
+            semantic_weight=1.0,
+        )
+        self.assertEqual(["HIGH_SIM", "LOW_SIM"], ranked)
+
+    def test_missing_semantic_score_contributes_zero_not_a_crash(self) -> None:
+        candidates = [
+            {"parent_asin": "SCORED", "title": "leather belt"},
+            {"parent_asin": "UNSCORED", "title": "leather belt"},
+        ]
+        ranked = rerank_candidates(
+            ["leather", "belt"],
+            candidates,
+            2,
+            semantic_scores={"SCORED": 0.9},
+            semantic_weight=1.0,
+        )
+        self.assertEqual(["SCORED", "UNSCORED"], ranked)
+
+    def test_default_semantic_weight_leaves_ranking_unchanged(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "leather belt"},
+            {"parent_asin": "B", "title": "leather belt"},
+        ]
+        ranked = rerank_candidates(
+            ["leather", "belt"], candidates, 2, semantic_scores={"B": 0.9}
+        )
+        self.assertEqual(["A", "B"], ranked)
+
+
 class CompletenessBonusTest(unittest.TestCase):
     def test_matching_every_required_term_outranks_more_individual_matches(self) -> None:
         # MORE-HITS matches more individual query terms overall (three cheap

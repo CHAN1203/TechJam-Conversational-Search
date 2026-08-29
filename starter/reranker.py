@@ -57,6 +57,8 @@ def rerank_candidates(
     popularity_weight: float = 0.0,
     required_terms: Sequence[str] | None = None,
     completeness_bonus: float = 0.0,
+    semantic_scores: Mapping[str, float] | None = None,
+    semantic_weight: float = 0.0,
 ) -> list[str]:
     """Order candidates by field-weighted term matches.
 
@@ -80,14 +82,23 @@ def rerank_candidates(
     field weights already computed for scoring, not a second text scan.
     Intended for Buying-classified sessions only; omit for Browsing, where
     the customer has not committed to a specific value yet.
+
+    `semantic_scores` maps `parent_asin` to a precomputed similarity score
+    (e.g. dense cosine similarity between the query and that candidate),
+    added as `semantic_weight * semantic_scores[parent_asin]`. A candidate
+    absent from the mapping contributes zero, not an error -- the semantic
+    signal is a bonus on top of lexical scoring, never a requirement.
     """
     required = set(required_terms or ())
+    semantic_scores = semantic_scores or {}
     scored = []
     for rank, candidate in enumerate(candidates):
+        parent_asin = str(candidate["parent_asin"])
         best_weight_by_term = _best_weight_by_term(query_terms, candidate)
         score = _match_score(best_weight_by_term, idf) + popularity_weight * _popularity(candidate)
+        score += semantic_weight * semantic_scores.get(parent_asin, 0.0)
         if required and all(best_weight_by_term.get(term, 0.0) > 0.0 for term in required):
             score += completeness_bonus
-        scored.append((score, rank, str(candidate["parent_asin"])))
+        scored.append((score, rank, parent_asin))
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [parent_asin for _, _, parent_asin in scored[:top_k]]
