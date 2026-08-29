@@ -79,6 +79,18 @@ records every retained and rejected method, verification run, and future update 
 Every evaluator-facing method or ablation must update that matrix, including
 experiments that are rejected or never committed.
 
+## Development Workflow
+
+Before starting another experiment, follow the
+[experiment workflow](docs/EXPERIMENT_WORKFLOW.md). It explains the branch and
+worktree process, development/validation split, testing order, experiment
+matrix updates, and how to preserve rejected implementations for review.
+
+The English documents in `docs/` and `reports/` are the Git-tracked source of
+truth. Optional Chinese translations live only on the local machine under
+`docs/zh-CN/` and `reports/zh-CN/`; Git ignores those folders, so they are not
+included in commits or pushed to GitHub.
+
 ## Agent Interface
 
 ```python

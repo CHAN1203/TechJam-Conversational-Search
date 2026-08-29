@@ -1,37 +1,43 @@
-# 实验历史与方法对比矩阵
+# Experiment History and Method Comparison Matrix
 
-这份文件是项目的实验总账。每次改变检索、排序、对话状态或提问策略，
-都必须在这里追加结果，包括失败实验。这样可以直接回答三个问题：
+This file is the project's experiment ledger. Every change to retrieval,
+ranking, conversation state, or question policy must add a result here,
+including failed experiments. It should answer three questions directly:
 
-1. 我们从哪里开始？
-2. 每次具体改了什么？
-3. 哪个方法最好，为什么保留或淘汰？
+1. Where did the project start?
+2. What changed in each experiment?
+3. Which method is best, and why was each method kept or rejected?
 
-> 当前最佳：Candidate-aware Clarification，Public HitRate@10 `0.870`，
-> MRR `0.544236`，MTTC `4.410`，TechnicalScore `0.730071`。
+> Current best: Candidate-aware Clarification, with public HitRate@10 `0.870`,
+> MRR `0.544236`, MTTC `4.410`, and TechnicalScore `0.730071`.
 
-## 1. 方法对比矩阵
+Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
+recording another method.
 
-所有正式结果都使用完整的 200-session public set、50,000-item frozen
-catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的方法的变化。
+## 1. Method comparison matrix
 
-| ID | 方法 | 主要变化 | 自动测试 | HitRate@10 | Δ HitRate | MRR | MTTC ↓ | Efficiency | TechnicalScore | Δ Score | 决定 | Commit |
+All formal results use the full 200-session public set, the frozen 50,000-item
+catalog, and the unmodified official evaluator. `Δ` is measured against the
+previous retained method.
+
+| ID | Method | Main change | Automated tests | HitRate@10 | Δ HitRate | MRR | MTTC ↓ | Efficiency | TechnicalScore | Δ Score | Decision | Commit |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| E0 | Weak BM25 baseline | BM25 直接返回 Top-10；无状态；不提问 | 3 | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | 基线 | `3407835` |
-| E1 | Field reranker v1 | BM25 Top-100 后按字段覆盖重新排序 | 10 | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **保留** | `db65ad2` |
-| E1-A | Reranker + BM25 rank prior | 在 E1 分数上加入原 BM25 排名先验 | Targeted | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | 淘汰 | 未提交 |
-| E2 | Conversation State v1 | 累积约束、处理 override、profile 引导且不重复提问 | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | 保留 | `d770b6f` |
-| E3-A | Fixed clarification | 固定属性提问顺序 | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | 淘汰 | `fa84de2` |
-| E3-B | Profile clarification | E2 的 profile-first 策略，作为消融基准 | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | 旧基线 | `fa84de2` |
-| E3-C | Candidate-aware clarification | 优先询问 Top-100 候选中有覆盖且有差异的属性 | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | **当前最佳** | `fa84de2` |
-| E4 | Balanced clarification | 用户偏好与当前商品差异的交集优先 | 23（实验时） | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | 淘汰 | 未提交行为 |
+| E0 | Weak BM25 baseline | Return BM25 Top-10 directly; no state or questions | 3 | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | Baseline | `3407835` |
+| E1 | Field reranker v1 | Rerank BM25 Top-100 by field coverage | 10 | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **Keep** | `db65ad2` |
+| E1-A | Reranker + BM25 rank prior | Add the original BM25 rank as a bonus to E1 | Targeted | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | Reject | Not committed |
+| E2 | Conversation State v1 | Accumulate constraints, handle overrides, ask profile-guided non-repeating questions | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | Keep | `d770b6f` |
+| E3-A | Fixed clarification | Use a fixed attribute question order | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | Reject | `fa84de2` |
+| E3-B | Profile clarification | Use the E2 profile-first policy as the ablation baseline | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | Previous baseline | `fa84de2` |
+| E3-C | Candidate-aware clarification | Ask first about a covered, varied attribute in the Top-100 candidates | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | **Current best** | `fa84de2` |
+| E4 | Balanced clarification | Prioritize the intersection of profile preferences and current product differences | 23 during experiment | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | Reject | Behavior not on production branch |
 
-`E1-A` 的 targeted test 曾完成 red-green，但对应行为因为 evaluator 回归而被
-删除，所以它没有进入最终测试套件或 Git commit。失败结果仍然保留在矩阵中。
+The E1-A targeted test completed a red-green cycle. The behavior was then
+removed because the evaluator regressed, so it is not in the final test suite
+or a Git commit. The failed result remains in this matrix.
 
-## 2. 各场景 HitRate@10 矩阵
+## 2. HitRate@10 by scenario
 
-| 方法 | Buying | Browsing | Intent Override | Boundary |
+| Method | Buying | Browsing | Intent Override | Boundary |
 | --- | ---: | ---: | ---: | ---: |
 | E0 Weak BM25 | 0.2375 | 0.0250 | 0.133333 | 0.0000 |
 | E1 Field reranker v1 | 0.2375 | 0.0875 | 0.133333 | 0.2000 |
@@ -42,17 +48,17 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E3-C Candidate-aware clarification | 0.8750 | **0.9625** | **0.600000** | 0.9000 |
 | E4 Balanced clarification | **0.8875** | **0.9625** | 0.533333 | **1.0000** |
 
-这张表不能单独证明 private-set 表现。它的用途是找出回归发生在哪个场景，
-避免总分提升掩盖某一类用户体验变差。
+This table cannot prove private-set performance. It identifies which scenario
+regressed so that an aggregate improvement does not hide a worse user experience.
 
-## 3. 前置诊断矩阵
+## 3. Diagnostic matrices before implementation
 
-### 3.1 BM25 第一轮候选召回
+### 3.1 First-turn BM25 candidate recall
 
-Candidate Recall 只回答目标有没有进入较大的候选池，不等于最多十轮的官方
-HitRate@10。
+Candidate Recall asks whether the target entered a larger candidate pool. It is
+not the official, up-to-ten-turn HitRate@10.
 
-| 场景 | Sessions | Recall@10 | Recall@50 | Recall@100 | Recall@500 |
+| Scenario | Sessions | Recall@10 | Recall@50 | Recall@100 | Recall@500 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Overall | 200 | 0.185 | 0.380 | 0.525 | 0.860 |
 | Buying | 80 | 0.2375 | 0.4750 | 0.5875 | 0.9375 |
@@ -60,39 +66,40 @@ HitRate@10。
 | Intent Override | 30 | 0.533333 | 0.666667 | 0.833333 | 0.966667 |
 | Boundary | 10 | 0.0000 | 0.3000 | 0.4000 | 0.7000 |
 
-结论：目标从 Top-10 的 37 个增加到 Top-500 的 172 个，主要问题首先是排序，
-所以先做 reranker，而不是立刻引入 dense retrieval。
+Conclusion: the number of targets found grows from 37 in the Top-10 to 172 in
+the Top-500. Ranking is therefore the first measured problem, so the project
+tested a reranker before adding dense retrieval.
 
-### 3.2 Catalog 字段覆盖率
+### 3.2 Catalog field coverage
 
-| 字段 | Coverage | 实验用途 |
+| Field | Coverage | Experimental use |
 | --- | ---: | --- |
-| categories | 1.00000 | 主类别与粗粒度意图 |
-| title | 0.99996 | 最高权重的商品匹配 |
-| details | 0.96660 | 属性与规格约束 |
-| store | 0.99372 | 品牌/店铺补充信号 |
-| features | 0.89562 | 功能、材质、使用场景 |
-| description | 0.52226 | 低权重补充文本 |
-| price | 0.21054 | 不适合作为默认硬过滤条件 |
+| categories | 1.00000 | Main category and broad intent |
+| title | 0.99996 | Highest-weight product matching |
+| details | 0.96660 | Attribute and specification constraints |
+| store | 0.99372 | Supporting brand/store signal |
+| features | 0.89562 | Feature, material, and use-case terms |
+| description | 0.52226 | Lower-weight supporting text |
+| price | 0.21054 | Too sparse for a default hard filter |
 
-## 4. 按时间记录做过的测试
+## 4. Chronological test and experiment record
 
-### T0：官方基线复现
+### T0: Reproduce the official baseline
 
-- 日期：2026-08-29
-- 方法：未修改的官方 weak BM25 starter。
-- 命令：`python -m evaluator.local_evaluator`
-- 数据：200 public sessions，50,000 catalog items。
-- 结果：HitRate@10 `0.125`，MRR `0.068034`，MTTC `9.81`，
-  TechnicalScore `0.106710`。
-- 作用：建立所有后续方法的固定比较点。
+- Date: 2026-08-29
+- Method: unmodified official weak BM25 starter.
+- Command: `python -m evaluator.local_evaluator`
+- Data: 200 public sessions and 50,000 catalog items.
+- Result: HitRate@10 `0.125`, MRR `0.068034`, MTTC `9.81`, TechnicalScore
+  `0.106710`.
+- Purpose: establish the fixed comparison point for every later method.
 
-### T1：BM25 候选召回与 catalog coverage
+### T1: BM25 candidate recall and catalog coverage
 
-- 新增 candidate rank、Recall@10/50/100/500 和按场景汇总。
-- 新增 catalog 空值/非空值统计。
-- 自动测试从 3 个增加到 7 个。
-- 命令：
+- Added candidate rank, Recall@10/50/100/500, and per-scenario summaries.
+- Added populated/missing statistics for catalog fields.
+- Automatic tests increased from 3 to 7.
+- Commands:
 
   ```powershell
   python -m scripts.analyze_bm25_recall
@@ -100,163 +107,174 @@ HitRate@10。
   python -m unittest discover -s tests -v
   ```
 
-- 结论：优先测试 Top-100/500 的轻量 reranking。
-- Commits：`583e79c`、`e33c097`、`c51573a`、`c438628`。
-- 详细证据：[baseline diagnostic summary](../reports/baseline/diagnostic-summary.md)。
+- Conclusion: test lightweight reranking over Top-100/500 candidates first.
+- Commits: `583e79c`, `e33c097`, `c51573a`, `c438628`.
+- Detailed evidence: [baseline diagnostic summary](../reports/baseline/diagnostic-summary.md).
 
-### T2：Field reranker v1
+### T2: Field reranker v1
 
-- BM25 候选池从 10 扩到 100。
-- 每个 query term 只计算最高价值字段匹配：title `4.0`、categories
-  `3.0`、features/details `2.0`、store `1.5`、description `1.0`。
-- 分数相同则保留 BM25 原顺序。
-- TDD 新增 reranker unit tests 和真实 SQLite FTS5 integration test。
-- 自动测试从 7 个增加到 10 个。
-- 结果：HitRate@10 `0.160`，TechnicalScore `0.133825`。
-- 决定：保留。
-- Commit：`db65ad2`。
-- 详细证据：[local reranker v1](../reports/experiments/local-reranker-v1.md)。
+- Expanded the BM25 candidate pool from 10 to 100.
+- Counted only the highest-value field match for each query term: title `4.0`,
+  categories `3.0`, features/details `2.0`, store `1.5`, description `1.0`.
+- Preserved original BM25 order when scores tied.
+- Added reranker unit tests and a real SQLite FTS5 integration test using TDD.
+- Automatic tests increased from 7 to 10.
+- Result: HitRate@10 `0.160`, TechnicalScore `0.133825`.
+- Decision: Keep.
+- Commit: `db65ad2`.
+- Detailed evidence: [local reranker v1](../reports/experiments/local-reranker-v1.md).
 
-### T3：BM25 rank prior ablation
+### T3: BM25 rank-prior ablation
 
-- 假设：保留部分 BM25 排名先验可以减少 E1 丢失的 5 个旧命中。
-- 改变：为 reranker 加入随 BM25 rank 衰减的 bonus。
-- 结果：HitRate@10 `0.155`，TechnicalScore `0.129498`，低于 E1。
-- 决定：淘汰；删除对应代码和只保护该失败行为的测试。
-- Commit：无。结果记录在 E1 报告与本文件中。
+- Hypothesis: retaining part of the BM25 order could recover five E1 losses.
+- Change: added a bonus that decreases with original BM25 rank.
+- Result: HitRate@10 `0.155`, TechnicalScore `0.129498`, below E1.
+- Decision: Reject; remove the code and the test that protected only the failed behavior.
+- Commit: none. Results remain in the E1 report and this ledger.
 
-### T4：Conversation State v1
+### T4: Conversation State v1
 
-- 跨轮累积有效 query constraints。
-- 对明确的 no-preference 回复不加入查询词。
-- Intent Override 时清除旧约束。
-- 根据 anonymized profile tags 决定 ask_attribute 顺序，且不重复提问。
-- 每轮同时返回 clarification question 和 Top-10 recommendations。
-- TDD 新增 4 个 conversation behavior tests。
-- 自动测试从 10 个增加到 14 个。
-- 泄漏检查：`starter/` 不引用 `ground_truth`、`public_set`、`intent_card`
-  或 evaluator behavior fields。
-- 结果：HitRate@10 `0.870`，TechnicalScore `0.723824`。
-- 决定：保留，为当时最佳；后由 E3-C 取代。
-- Commit：`d770b6f`。
-- 详细证据：[conversation state v1](../reports/experiments/conversation-state-v1.md)。
+- Accumulated valid query constraints across turns.
+- Excluded explicit no-preference replies from query terms.
+- Cleared old constraints when the user overrode the earlier intent.
+- Used anonymized profile tags for non-repeating ask-attribute order.
+- Returned a clarification question and Top-10 recommendations on every turn.
+- Added four conversation behavior tests with TDD.
+- Automatic tests increased from 10 to 14.
+- Leakage check: `starter/` does not reference `ground_truth`, `public_set`,
+  `intent_card`, or evaluator behavior fields.
+- Result: HitRate@10 `0.870`, TechnicalScore `0.723824`.
+- Decision: Keep; it was later replaced by E3-C as the best method.
+- Commit: `d770b6f`.
+- Detailed evidence: [conversation state v1](../reports/experiments/conversation-state-v1.md).
 
-### T5：独立 worktree 重现
+### T5: Reproduce results in an isolated worktree
 
-- 从 `d770b6f` 创建 `experiment/clarification-ablation`。
-- 使用 hard link 复用同一份 `data/catalog.jsonl`。
-- 14/14 tests 通过。
-- 完整 evaluator 再次得到 HitRate@10 `0.870`、MRR `0.533748`、
-  MTTC `4.565`、TechnicalScore `0.723824`。
-- 结论：新实验环境与稳定分支的基线一致，可以开始 clarification ablation。
+- Created `experiment/clarification-ablation` from `d770b6f`.
+- Reused the same `data/catalog.jsonl` through a hard link.
+- 14/14 tests passed.
+- The full evaluator reproduced HitRate@10 `0.870`, MRR `0.533748`, MTTC
+  `4.565`, and TechnicalScore `0.723824`.
+- Conclusion: the experiment environment matched the stable branch and was
+  ready for clarification ablation.
 
-### T6：固定切分与 Clarification Policy Ablation
+### T6: Fixed split and clarification-policy ablation
 
-- 日期：2026-08-29。
-- 用 seed `techjam-clarification-v1` 按 scenario/difficulty 将 public set 固定分为
-  120 development sessions 和 80 validation sessions。
-- 对比 fixed、profile、candidate 三种策略；其余检索、排序和状态逻辑不变。
-- 选择规则：只用 validation TechnicalScore 选胜者。
-- Validation score：fixed `0.750158`、profile `0.741824`、candidate
-  `0.755720`。
-- 决定：candidate 胜出并设为默认；fixed 淘汰，profile 保留为可选 ablation。
-- Full public：HitRate@10 `0.870`、MRR `0.544236`、MTTC `4.410`、
-  TechnicalScore `0.730071`。
-- 实现 commit：`fa84de2`。
-- 详细证据：[clarification policy ablation](../reports/experiments/clarification-ablation.md)。
+- Date: 2026-08-29.
+- Used seed `techjam-clarification-v1` to split the public set by scenario and
+  difficulty into 120 development and 80 validation sessions.
+- Compared fixed, profile, and candidate policies while keeping retrieval,
+  ranking, and state logic unchanged.
+- Selection rule: choose only by validation TechnicalScore.
+- Validation scores: fixed `0.750158`, profile `0.741824`, candidate `0.755720`.
+- Decision: candidate wins and becomes default; fixed is rejected and profile
+  remains available as an ablation baseline.
+- Full public: HitRate@10 `0.870`, MRR `0.544236`, MTTC `4.410`,
+  TechnicalScore `0.730071`.
+- Implementation commit: `fa84de2`.
+- Detailed evidence: [clarification policy ablation](../reports/experiments/clarification-ablation.md).
 
-### T7：Candidate 策略性能复测
+### T7: Candidate-policy performance rerun
 
-- 初次完整运行：candidate `144.189s`，profile `82.447s`。
-- 优化：每个候选只进行一次文本分词，六种属性复用 token set。
-- 优化后 candidate：`88.492s`，全部指标与优化前逐项相同。
-- 自动测试增加到 21 个；默认 Agent 走 candidate 策略的行为由 integration test 锁定。
-- 官方 evaluator 默认入口复测得到 TechnicalScore `0.730071`。
+- First full run: candidate `144.189s`, profile `82.447s`.
+- Optimization: tokenize each candidate once and reuse the token set for all six
+  attributes.
+- Optimized candidate run: `88.492s`, with every metric unchanged.
+- Automatic tests increased to 21; an integration test locks the default Agent
+  to the candidate policy.
+- The official evaluator entry point reproduced TechnicalScore `0.730071`.
 
-### T8：Balanced clarification ablation
+### T8: Balanced clarification ablation
 
-- 日期：2026-08-29。
-- 原因：E3-C 在 Full public 的 Buying 和 Boundary 各比 profile 少命中一个商品。
-- 只读重跑确认两个失败分别来自普通材质词干扰，以及 Boundary 首次 no-preference
-  回复浪费了重要属性问题。
-- 方法：若某个 profile 偏好在当前候选商品中确实有差异，就先询问它；否则沿用
-  candidate 顺序。
-- TDD：新增两项测试，分别保护“偏好且有差异时优先”和“偏好但无差异时跳过”；
-  实验期间完整测试 23/23 通过。
-- Validation：Candidate `0.755720`，Balanced `0.743074`，下降 `0.012646`。
-- Full public：Balanced 找回 Buying 和 Boundary 各一个命中，但 Intent Override
-  少两个命中；TechnicalScore 从 `0.730071` 降至 `0.725074`。
-- 决定：淘汰；删除实验行为和对应测试，Candidate 保持默认。
-- 详细证据：[balanced clarification experiment](../reports/experiments/balanced-clarification.md)。
+- Date: 2026-08-29.
+- Reason: on full public, E3-C found one fewer Buying and one fewer Boundary
+  target than profile.
+- Read-only reruns tied the failures to a generic material answer and a Boundary
+  first-turn no-preference response that spent an important question.
+- Method: first ask about a profile preference when it also varies across the
+  current candidates; otherwise use candidate order.
+- TDD: added two tests for prioritizing a varied preference and skipping a
+  preference with no candidate variation; 23/23 tests passed during the experiment.
+- Validation: Candidate `0.755720`, Balanced `0.743074`, down `0.012646`.
+- Full public: Balanced recovered one Buying and one Boundary hit but lost two
+  Intent Override hits; TechnicalScore fell from `0.730071` to `0.725074`.
+- Decision: Reject; Candidate remains the default. The exact rejected code and
+  tests are preserved on `review/balanced-clarification-implementation`.
+- Detailed evidence: [balanced clarification experiment](../reports/experiments/balanced-clarification.md).
 
-## 5. 当前自动测试覆盖
+## 5. Current automated test coverage
 
-| 测试模块 | Tests | 保护的行为 |
+| Test module | Tests | Behavior protected |
 | --- | ---: | --- |
-| `test_evaluator.py` | 3 | 输出 normalization、miss turn、hidden-field materialization |
-| `test_bm25_diagnostics.py` | 3 | rank、cutoff recall、第一轮测量 |
-| `test_catalog_profile.py` | 1 | 空 collection 的 coverage 语义 |
-| `test_reranker.py` | 2 | 完整约束优先、tie 保持 BM25 顺序 |
-| `test_agent_reranking.py` | 1 | Agent 确实 rerank 更大的候选池 |
-| `test_conversation_state.py` | 6 | 累积、否定、override、非重复提问、策略选择与默认策略 |
-| `test_clarification.py` | 2 | fixed/profile 差异、candidate 的 grounded attribute 选择 |
-| `test_clarification_ablation.py` | 1 | 真实 FTS5 evaluator 上的多策略与切分整合 |
-| `test_experiment_split.py` | 1 | 固定切分大小、分层平衡、dev/validation 不重叠 |
-| `test_experiment_results.py` | 1 | split metrics、scenario metrics 与 TechnicalScore |
-| **总计** | **21** | 当前完整回归套件 |
+| `test_evaluator.py` | 3 | Output normalization, miss turn, hidden-field materialization |
+| `test_bm25_diagnostics.py` | 3 | Rank, cutoff recall, first-turn measurement |
+| `test_catalog_profile.py` | 1 | Coverage meaning for empty collections |
+| `test_reranker.py` | 2 | Complete-constraint priority and BM25 tie order |
+| `test_agent_reranking.py` | 1 | Agent reranks a larger candidate pool |
+| `test_conversation_state.py` | 6 | Accumulation, negation, override, non-repeating questions, policy selection and default |
+| `test_clarification.py` | 2 | Fixed/profile difference and candidate grounded-attribute selection |
+| `test_clarification_ablation.py` | 1 | Multiple policies and splits on the real FTS5 evaluator |
+| `test_experiment_split.py` | 1 | Fixed split size, stratification, and no dev/validation overlap |
+| `test_experiment_results.py` | 1 | Split metrics, scenario metrics, and TechnicalScore |
+| **Total** | **21** | Current full regression suite |
 
-运行完整测试：
+Run the full tests:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-运行官方 public evaluator：
+Run the official public evaluator:
 
 ```powershell
 python -m evaluator.local_evaluator
 ```
 
-## 6. 以后如何更新这份文件
+## 6. How to update this ledger
 
-每个新方法都执行以下步骤：
+Follow the full [experiment workflow](EXPERIMENT_WORKFLOW.md). For every method:
 
-1. 分配下一个 ID，例如 `E3`；参数消融使用 `E3-A`、`E3-B`。
-2. 在“方法对比矩阵”追加一行，即使结果失败也不能删除。
-3. 在“各场景矩阵”追加 Buying、Browsing、Intent Override、Boundary。
-4. 在“按时间记录”追加假设、改动、命令、测试数、指标、决定和 commit。
-5. 只保留 aggregate metrics；不要把 private labels 或 credentials 写进文档。
-6. 若方法被淘汰，写明它比哪个保留方法差，以及差多少。
-7. 更新文件顶部的“当前最佳”，但不要覆盖历史结果。
+1. Assign the next ID, such as `E5`; use `E5-A` and `E5-B` for variants.
+2. Add a method-matrix row even when the result fails.
+3. Add Buying, Browsing, Intent Override, and Boundary to the scenario matrix.
+4. Add a chronological entry with the hypothesis, change, commands, test count,
+   metrics, decision, and commit or review branch.
+5. Store only aggregate metrics. Never record private labels or credentials.
+6. For a rejected method, state which retained method beat it and by how much.
+7. Update "Current best" at the top without overwriting historical results.
+8. Update the local Chinese mirror, but never stage or push it.
 
-新实验记录模板：
+New experiment template:
 
 ```markdown
-### T<N>：<实验名称>
+### T<N>: <Experiment name>
 
-- 日期：YYYY-MM-DD
-- 假设：
-- 相对上一保留方法的改变：
-- 新增或修改的测试：
-- 运行命令：
-- Overall：HitRate@10、MRR、MTTC、Efficiency、TechnicalScore
-- Scenario：Buying、Browsing、Intent Override、Boundary
-- 决定：保留 / 淘汰 / 需要更多证据
-- Commit：
-- 限制与下一步：
+- Date: YYYY-MM-DD
+- Hypothesis:
+- Change from the last retained method:
+- New or changed tests:
+- Commands:
+- Overall: HitRate@10, MRR, MTTC, Efficiency, TechnicalScore
+- Scenarios: Buying, Browsing, Intent Override, Boundary
+- Decision: Keep / Reject / Need more evidence
+- Commit or review branch:
+- Limitations and next step:
 ```
 
-## 7. 指标解释与比较规则
+## 7. Metric meanings and comparison rules
 
-- HitRate@10：最多 10 轮内找到目标商品的 session 比例，越高越好。
-- MRR：命中排名倒数的平均值，越高表示目标更靠前。
-- MTTC：首次命中平均轮数；miss 按第 11 轮计算，越低越好。
-- Efficiency：`clip((11 - MTTC) / 10, 0, 1)`。
-- TechnicalScore：`0.50 × HitRate + 0.30 × MRR + 0.20 × Efficiency`。
-- Candidate Recall 与官方 HitRate@10 不可直接比较。
-- Public-set 改善不保证 private-set 改善，因此保留失败实验和 ablation 证据。
+- **HitRate@10:** share of sessions that find the target within ten turns; higher
+  is better.
+- **MRR:** average reciprocal target rank; higher means the target appears nearer
+  the top.
+- **MTTC:** average first-hit turn, with a miss counted as turn 11; lower is better.
+- **Efficiency:** `clip((11 - MTTC) / 10, 0, 1)`.
+- **TechnicalScore:** `0.50 × HitRate + 0.30 × MRR + 0.20 × Efficiency`.
+- Candidate Recall and official HitRate@10 are not directly comparable.
+- Public-set improvement does not guarantee private-set improvement. Keep failed
+  experiments and ablation evidence.
 
-## 8. 证据来源
+## 8. Evidence sources
 
 - [Official baseline JSON](baseline_results.json)
 - [Evaluation configuration](evaluation_config.json)
