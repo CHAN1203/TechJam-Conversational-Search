@@ -13,6 +13,47 @@ Almost all of the gain came from one change that was not the point of the work:
 giving every gazetteer term exactly one slot. The four experiments that were
 deliberately designed to raise the score contributed `+0.003719` between them.
 
+## Architecture
+
+E9 is E3-C with two additions. Everything that produced the previous best score
+is unchanged:
+
+| Stage | Status |
+| --- | --- |
+| SQLite FTS5 index over 6 fields | unchanged |
+| BM25 retrieval, OR over accumulated terms | unchanged |
+| Candidate pool size 100 | unchanged (500 tested and rejected, E7) |
+| Field-weight reranker, no IDF | unchanged (IDF tested and rejected, E8) |
+| Candidate-aware clarification | unchanged, still the default policy |
+| Constraint accumulation across turns | unchanged |
+| **Mined slot vocabulary** | **new** (`analysis/gazetteer.py`, `data/gazetteer.json`) |
+| **Slot-scoped intent override** | **new** (`starter/slots.py`, `starter/agent.py`) |
+
+No retrieval or ranking behaviour changed. The gain comes from the agent
+knowing which slot a word belongs to, so an override replaces one constraint
+instead of clearing them all.
+
+## Running it
+
+The best configuration is the default. No flag, no alternate entry point:
+
+```python
+Agent(catalog_path)   # clarification_policy="candidate", gazetteer_path="data/gazetteer.json"
+```
+
+`python -m evaluator.local_evaluator` constructs exactly this and reports
+TechnicalScore `0.747917`.
+
+`data/gazetteer.json` is committed, so a checkout has it. If it is ever absent
+or unreadable the agent **degrades silently** to the pre-slot behaviour rather
+than raising, which keeps the scored path safe but will quietly cost
+`0.747917 -> 0.733790`. If a run reports the lower number, check that the file
+is present before looking anywhere else. Rebuild it with:
+
+```
+python -m scripts.build_gazetteer
+```
+
 ## What was built
 
 A slot vocabulary is mined offline from the frozen catalog and shipped as
