@@ -24,6 +24,7 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E3-A | Fixed clarification | 固定属性提问顺序 | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | 淘汰 | `fa84de2` |
 | E3-B | Profile clarification | E2 的 profile-first 策略，作为消融基准 | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | 旧基线 | `fa84de2` |
 | E3-C | Candidate-aware clarification | 优先询问 Top-100 候选中有覆盖且有差异的属性 | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | **当前最佳** | `fa84de2` |
+| E4 | Balanced clarification | 用户偏好与当前商品差异的交集优先 | 23（实验时） | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | 淘汰 | 未提交行为 |
 
 `E1-A` 的 targeted test 曾完成 red-green，但对应行为因为 evaluator 回归而被
 删除，所以它没有进入最终测试套件或 Git commit。失败结果仍然保留在矩阵中。
@@ -39,6 +40,7 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E3-A Fixed clarification | 0.8750 | **0.9625** | 0.566667 | 0.9000 |
 | E3-B Profile clarification | **0.8875** | **0.9625** | 0.533333 | **1.0000** |
 | E3-C Candidate-aware clarification | 0.8750 | **0.9625** | **0.600000** | 0.9000 |
+| E4 Balanced clarification | **0.8875** | **0.9625** | 0.533333 | **1.0000** |
 
 这张表不能单独证明 private-set 表现。它的用途是找出回归发生在哪个场景，
 避免总分提升掩盖某一类用户体验变差。
@@ -171,6 +173,22 @@ HitRate@10。
 - 自动测试增加到 21 个；默认 Agent 走 candidate 策略的行为由 integration test 锁定。
 - 官方 evaluator 默认入口复测得到 TechnicalScore `0.730071`。
 
+### T8：Balanced clarification ablation
+
+- 日期：2026-08-29。
+- 原因：E3-C 在 Full public 的 Buying 和 Boundary 各比 profile 少命中一个商品。
+- 只读重跑确认两个失败分别来自普通材质词干扰，以及 Boundary 首次 no-preference
+  回复浪费了重要属性问题。
+- 方法：若某个 profile 偏好在当前候选商品中确实有差异，就先询问它；否则沿用
+  candidate 顺序。
+- TDD：新增两项测试，分别保护“偏好且有差异时优先”和“偏好但无差异时跳过”；
+  实验期间完整测试 23/23 通过。
+- Validation：Candidate `0.755720`，Balanced `0.743074`，下降 `0.012646`。
+- Full public：Balanced 找回 Buying 和 Boundary 各一个命中，但 Intent Override
+  少两个命中；TechnicalScore 从 `0.730071` 降至 `0.725074`。
+- 决定：淘汰；删除实验行为和对应测试，Candidate 保持默认。
+- 详细证据：[balanced clarification experiment](../reports/experiments/balanced-clarification.md)。
+
 ## 5. 当前自动测试覆盖
 
 | 测试模块 | Tests | 保护的行为 |
@@ -246,4 +264,5 @@ python -m evaluator.local_evaluator
 - [Field reranker experiment](../reports/experiments/local-reranker-v1.md)
 - [Conversation state experiment](../reports/experiments/conversation-state-v1.md)
 - [Clarification policy ablation](../reports/experiments/clarification-ablation.md)
+- [Balanced clarification experiment](../reports/experiments/balanced-clarification.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)
