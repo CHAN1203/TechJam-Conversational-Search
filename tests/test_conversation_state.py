@@ -20,16 +20,24 @@ class ConversationStateTest(unittest.TestCase):
         products: list[dict],
         profile: dict | None = None,
         clarification_policy: str | None = None,
+        gazetteer: dict | None = None,
     ) -> Agent:
-        catalog_path = Path(self.temporary_directory.name) / "catalog.jsonl"
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
         catalog_path.write_text(
             "".join(json.dumps(product) + "\n" for product in products),
             encoding="utf-8",
         )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text(json.dumps(gazetteer or {}), encoding="utf-8")
         if clarification_policy is None:
-            agent = Agent(catalog_path)
+            agent = Agent(catalog_path, gazetteer_path=gazetteer_path)
         else:
-            agent = Agent(catalog_path, clarification_policy=clarification_policy)
+            agent = Agent(
+                catalog_path,
+                clarification_policy=clarification_policy,
+                gazetteer_path=gazetteer_path,
+            )
         agent.reset("session", profile or {})
         return agent
 
@@ -103,27 +111,40 @@ class ConversationStateTest(unittest.TestCase):
             response["recommendations"],
         )
 
-    def test_intent_override_replaces_earlier_constraints(self) -> None:
-        agent = self.build_agent([
-            {
-                "parent_asin": "OLD-MIXED",
-                "title": "Red Shirt",
-                "categories": ["Shirts"],
-                "features": ["Blue accent"],
-                "details": {},
-                "store": "Example",
-                "description": [],
+    def test_intent_override_drops_the_revoked_value_but_keeps_the_product_type(self) -> None:
+        # An override replaces a preference, not the thing being shopped for.
+        # Forgetting "shirt" as well would send the customer a jacket.
+        agent = self.build_agent(
+            [
+                {
+                    "parent_asin": "RED-SHIRT",
+                    "title": "Red Shirt",
+                    "categories": ["Shirts"],
+                    "features": ["Everyday wear"],
+                    "details": {}, "store": "Example", "description": [],
+                },
+                {
+                    # Deliberately the weaker match on "blue" alone, so this
+                    # test can only pass if "shirt" survives the override.
+                    "parent_asin": "BLUE-SHIRT",
+                    "title": "Classic Everyday Button Down Collared Shirt In Blue",
+                    "categories": ["Shirts"],
+                    "features": ["Everyday wear"],
+                    "details": {}, "store": "Example", "description": [],
+                },
+                {
+                    "parent_asin": "BLUE-JACKET",
+                    "title": "Blue Jacket",
+                    "categories": ["Jackets"],
+                    "features": ["Everyday wear"],
+                    "details": {}, "store": "Example", "description": [],
+                },
+            ],
+            gazetteer={
+                "category": {"shirt": 2, "jacket": 1},
+                "color": {"red": 1, "blue": 2},
             },
-            {
-                "parent_asin": "NEW-BLUE",
-                "title": "Blue Jacket",
-                "categories": ["Jackets"],
-                "features": ["Everyday wear"],
-                "details": {},
-                "store": "Example",
-                "description": [],
-            },
-        ])
+        )
 
         agent.respond("session", "I want a red shirt", 1, 1)
         response = agent.respond(
@@ -134,7 +155,7 @@ class ConversationStateTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            [{"parent_asin": "NEW-BLUE"}],
+            [{"parent_asin": "BLUE-SHIRT"}],
             response["recommendations"],
         )
 
@@ -215,3 +236,115 @@ class ConversationStateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IntentOverrideMemoryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    CATALOG = [
+        {
+            "parent_asin": "SHOE-CANVAS",
+            "title": "Running Shoe Built With Durable Canvas Upper Material",
+            "categories": ["Shoes"],
+            "features": ["Breathable everyday trainer"],
+            "details": {}, "store": "Example", "description": [],
+        },
+        {
+            "parent_asin": "SHOE-LEATHER",
+            "title": "Running Shoe Built With Durable Leather Upper Material",
+            "categories": ["Shoes"],
+            "features": ["Breathable everyday trainer"],
+            "details": {}, "store": "Example", "description": [],
+        },
+        {
+            "parent_asin": "BAG-CANVAS",
+            "title": "Canvas Bag",
+            "categories": ["Bags"],
+            "features": ["Tote"],
+            "details": {}, "store": "Example", "description": [],
+        },
+    ]
+    GAZETTEER = {
+        "category": {"shoe": 2, "bag": 1},
+        "material": {"canvas": 2, "leather": 1},
+    }
+
+    def build_agent(self) -> Agent:
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in self.CATALOG), encoding="utf-8"
+        )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text(json.dumps(self.GAZETTEER), encoding="utf-8")
+        agent = Agent(catalog_path, gazetteer_path=gazetteer_path)
+        agent.reset("session", {})
+        return agent
+
+    def test_missing_gazetteer_file_leaves_the_agent_usable(self) -> None:
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in self.CATALOG), encoding="utf-8"
+        )
+        agent = Agent(catalog_path, gazetteer_path=base / "absent.json")
+        agent.reset("session", {})
+        response = agent.respond("session", "I want a canvas shoe", 1, 3)
+        self.assertIsInstance(response["recommendations"], list)
+
+
+class OverrideRetainsAnsweredConstraintsTest(ConversationStateTest):
+    def test_override_keeps_answers_given_to_questions_but_drops_the_volunteered_preference(self) -> None:
+        # "Ignore my earlier preference" revokes what the customer volunteered
+        # on turn 1, not the answers they gave when the agent asked. Dropping
+        # those answers throws away constraints that were never withdrawn.
+        agent = self.build_agent(
+            [
+                {
+                    # Weaker on {shirt, blue} alone, so this can only win if
+                    # "cotton" survives the override.
+                    "parent_asin": "BLUE-COTTON",
+                    "title": "Blue Cotton Button Down Collared Shirt",
+                    "categories": ["Shirts"],
+                    "features": ["Everyday wear"],
+                    "details": {}, "store": "Example", "description": [],
+                },
+                {
+                    "parent_asin": "BLUE-LINEN",
+                    "title": "Blue Shirt",
+                    "categories": ["Shirts"],
+                    "features": ["Linen"],
+                    "details": {}, "store": "Example", "description": [],
+                },
+                {
+                    "parent_asin": "RED-COTTON",
+                    "title": "Red Cotton Shirt",
+                    "categories": ["Shirts"],
+                    "features": ["Everyday wear"],
+                    "details": {}, "store": "Example", "description": [],
+                },
+            ],
+            gazetteer={
+                "category": {"shirt": 3},
+                "color": {"red": 1, "blue": 2},
+                "material": {"cotton": 2, "linen": 1},
+            },
+        )
+
+        agent.respond("session", "I want a red shirt", 1, 1)
+        agent.respond("session", "For that, what matters is: cotton.", 2, 1)
+        response = agent.respond(
+            "session",
+            "Actually, ignore my earlier preference. What I need is: blue.",
+            3,
+            1,
+        )
+
+        self.assertEqual(
+            [{"parent_asin": "BLUE-COTTON"}],
+            response["recommendations"],
+        )

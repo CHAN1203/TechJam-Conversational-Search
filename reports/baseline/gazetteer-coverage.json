@@ -1,0 +1,366 @@
+{
+  "row_count": 50000,
+  "top_n": 60,
+  "slots": {
+    "category": {
+      "term_count": 643,
+      "covered_items": 156315,
+      "top_terms": [
+        [
+          "clothing",
+          20523
+        ],
+        [
+          "shoe",
+          11706
+        ],
+        [
+          "jewelry",
+          5127
+        ],
+        [
+          "accessory",
+          4284
+        ],
+        [
+          "tee",
+          3918
+        ],
+        [
+          "top",
+          3639
+        ],
+        [
+          "novelty",
+          3208
+        ],
+        [
+          "t shirt",
+          2807
+        ],
+        [
+          "blouse",
+          2471
+        ],
+        [
+          "active",
+          2370
+        ],
+        [
+          "athletic",
+          2330
+        ],
+        [
+          "sandal",
+          2213
+        ],
+        [
+          "dress",
+          2181
+        ],
+        [
+          "shirt",
+          2176
+        ],
+        [
+          "sleep",
+          1683
+        ]
+      ]
+    },
+    "color": {
+      "term_count": 53,
+      "covered_items": 32023,
+      "top_terms": [
+        [
+          "black",
+          6787
+        ],
+        [
+          "white",
+          3305
+        ],
+        [
+          "blue",
+          2670
+        ],
+        [
+          "red",
+          1916
+        ],
+        [
+          "grey",
+          1741
+        ],
+        [
+          "pink",
+          1432
+        ],
+        [
+          "green",
+          1375
+        ],
+        [
+          "natural",
+          1310
+        ],
+        [
+          "multi",
+          1218
+        ],
+        [
+          "yellow",
+          998
+        ],
+        [
+          "navy",
+          960
+        ],
+        [
+          "brown",
+          954
+        ],
+        [
+          "rose",
+          693
+        ],
+        [
+          "purple",
+          646
+        ],
+        [
+          "gray",
+          571
+        ]
+      ]
+    },
+    "department": {
+      "term_count": 6,
+      "covered_items": 43454,
+      "top_terms": [
+        [
+          "women",
+          25792
+        ],
+        [
+          "men",
+          10725
+        ],
+        [
+          "unisex-adult",
+          2275
+        ],
+        [
+          "girls",
+          2180
+        ],
+        [
+          "boys",
+          1685
+        ],
+        [
+          "unisex-child",
+          797
+        ]
+      ]
+    },
+    "material": {
+      "term_count": 60,
+      "covered_items": 91039,
+      "top_terms": [
+        [
+          "polyester",
+          10330
+        ],
+        [
+          "cotton",
+          9402
+        ],
+        [
+          "fabric",
+          7610
+        ],
+        [
+          "leather",
+          6888
+        ],
+        [
+          "rubber",
+          6626
+        ],
+        [
+          "spandex",
+          5407
+        ],
+        [
+          "other",
+          3963
+        ],
+        [
+          "synthetic",
+          3855
+        ],
+        [
+          "silver",
+          2935
+        ],
+        [
+          "mesh",
+          2469
+        ],
+        [
+          "gold",
+          2441
+        ],
+        [
+          "nylon",
+          2411
+        ],
+        [
+          "steel",
+          1987
+        ],
+        [
+          "metal",
+          1646
+        ],
+        [
+          "stainless steel",
+          1537
+        ]
+      ]
+    },
+    "size": {
+      "term_count": 34,
+      "covered_items": 24299,
+      "top_terms": [
+        [
+          "free",
+          3912
+        ],
+        [
+          "adjustable",
+          3541
+        ],
+        [
+          "large",
+          3168
+        ],
+        [
+          "small",
+          2942
+        ],
+        [
+          "medium",
+          1967
+        ],
+        [
+          "one size",
+          1686
+        ],
+        [
+          "standard",
+          1278
+        ],
+        [
+          "adult",
+          1210
+        ],
+        [
+          "regular",
+          1053
+        ],
+        [
+          "x large",
+          824
+        ],
+        [
+          "xx large",
+          402
+        ],
+        [
+          "size 7",
+          308
+        ],
+        [
+          "8 inch",
+          279
+        ],
+        [
+          "3 inch",
+          253
+        ],
+        [
+          "7 inch",
+          196
+        ]
+      ]
+    },
+    "style": {
+      "term_count": 46,
+      "covered_items": 53345,
+      "top_terms": [
+        [
+          "soft",
+          9242
+        ],
+        [
+          "comfortable",
+          8391
+        ],
+        [
+          "classic",
+          4150
+        ],
+        [
+          "sport",
+          3303
+        ],
+        [
+          "stylish",
+          2763
+        ],
+        [
+          "short sleeve",
+          2686
+        ],
+        [
+          "unique",
+          2671
+        ],
+        [
+          "elegant",
+          2171
+        ],
+        [
+          "travel",
+          1923
+        ],
+        [
+          "protection",
+          1720
+        ],
+        [
+          "simple",
+          1626
+        ],
+        [
+          "vintage",
+          1622
+        ],
+        [
+          "unisex",
+          1566
+        ],
+        [
+          "snap",
+          898
+        ],
+        [
+          "retro",
+          774
+        ]
+      ]
+    }
+  }
+}
