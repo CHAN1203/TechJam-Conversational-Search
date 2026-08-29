@@ -73,6 +73,10 @@ public-set HitRate@10 from `0.125` to `0.870` and TechnicalScore from
 [`conversation-state-v1` report](reports/experiments/conversation-state-v1.md)
 and the preceding
 [`local-reranker-v1` report](reports/experiments/local-reranker-v1.md).
+The cumulative [experiment history and comparison matrix](docs/experiment_history.md)
+records every retained and rejected method, verification run, and future update rule.
+Every evaluator-facing method or ablation must update that matrix, including
+experiments that are rejected or never committed.
 
 ## Agent Interface
 
