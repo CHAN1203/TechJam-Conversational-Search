@@ -32,6 +32,15 @@ def main() -> None:
     validation_ids = {str(s["sample_id"]) for s in validation}
     catalog_ids, categories, products = catalog_index(args.catalog)
 
+    # A prior this strong could lift only the easy sessions while leaving the
+    # hard ones untouched, which would inflate the total without the agent
+    # getting better. Reporting by difficulty makes that visible.
+    difficulty = {
+        str(sample["sample_id"]): str(sample.get("difficulty_bucket", "unknown"))
+        for sample in samples
+    }
+    buckets = sorted(set(difficulty.values()))
+
     results: dict[str, dict] = {}
     for weight in args.weights:
         sessions = evaluate(
@@ -46,10 +55,20 @@ def main() -> None:
             "validation": summarize_sessions(
                 [s for s in sessions if str(s["sample_id"]) in validation_ids]
             ),
+            "difficulty": {
+                bucket: summarize_sessions(
+                    [s for s in sessions if difficulty[str(s["sample_id"])] == bucket]
+                )
+                for bucket in buckets
+            },
         }
-        v = results[f"{weight:g}"]["validation"]
-        print(f"weight={weight:<5g} validation score={v['recommended_technical_score']:.6f} "
-              f"hit={v['hit_rate_at_10']:.4f} mttc={v['mttc']:.3f}", flush=True)
+        row = results[f"{weight:g}"]
+        by_difficulty = "  ".join(
+            f"{bucket}={row['difficulty'][bucket]['hit_rate_at_10']:.4f}"
+            for bucket in buckets
+        )
+        print(f"weight={weight:<5g} validation={row['validation']['recommended_technical_score']:.6f} "
+              f"full={row['full']['recommended_technical_score']:.6f}  {by_difficulty}", flush=True)
 
     payload = {"seed": args.seed, "validation_size": args.validation_size, "weights": results}
     out = Path(args.output)
