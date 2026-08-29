@@ -40,6 +40,7 @@
 | E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 | E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | **Current best** | `52789c4` |
+| E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -67,6 +68,7 @@
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
 | E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
 | E11 Popularity prior | 0.9500 | **1.0000** | **0.933333** | 0.9000 |
+| E12 Phrase-independent override | 0.9500 | 0.9875 | **0.933333** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -457,6 +459,64 @@
   constructed**, not personalization, and the report should say so. Boundary is unchanged at
   `0.9000` across every weight, so those sessions are limited by something else.
 - Commit: `52789c4`. Evidence: [popularity prior](../reports/experiments/popularity-prior.md).
+
+### T16: Phrase-independent override (rejected, design tradeoff)
+
+- Date: 2026-08-29
+- Origin: `_is_intent_override()` matches one literal sentence copied from the
+  local simulator's `behavior_for()` template. This was already flagged as a
+  limitation in T14/`slot-memory-and-retrieval-ablation.md`: the private set
+  is not guaranteed to phrase a change of mind the same way.
+- Hypothesis: a slot already holding one value, and the current message
+  supplying a *different* value for that same non-durable slot, is itself
+  evidence of a change of mind — independent of sentence wording.
+- Change: `_is_intent_override()` gains a second, additive path to `True`
+  (a same-slot conflict) alongside the existing literal-phrase check. The
+  override *mechanism* (which slots survive, which are cleared) is
+  unchanged; only the *trigger* is broadened.
+- New tests: 4, in `tests/test_conversation_state.py`
+  (`PhraseIndependentOverrideTest`) — new-behavior, two false-positive
+  guards, and a literal-phrase regression guard. All red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: HitRate@10 `0.960`, MRR `0.661292`, MTTC `3.005`, TechnicalScore
+  `0.838288` (E11 was `0.841838`, `-0.003550`).
+- Scenario: buying `0.9500` unchanged, browsing `1.0000 -> 0.9875` (one
+  session), intent_override `0.933333` unchanged, boundary `0.9000`
+  unchanged.
+- Root cause of the one regression, traced turn by turn on `public_0172`:
+  the gazetteer correctly mines `synthetic` as a **material** term, but the
+  simulator disclosed it in answer to a `feature` question, not a
+  `material` question. A later, real `material` answer (`cotton`) then
+  looks like a conflict with `synthetic` and triggers the broadened
+  override, which — correctly, by design — replaces the slot's contents and
+  drops `synthetic` from the search. The baseline kept both words and found
+  the target at rank 6; this version does not. This is a design weakness
+  (the rule cannot distinguish "new answer to the same question" from "new
+  answer to a different question that shares a gazetteer slot"), not an
+  implementation bug — the code does exactly what the rule says.
+- Decision: **Reject as the default.** The threshold set before
+  implementation (full-set TechnicalScore must not drop below `0.841838`)
+  is not met. The cost is small (one session) and the benefit (robustness
+  to a differently-worded override on the private set) is real but
+  unmeasurable on this public set, so this is a judgment call on risk
+  tolerance rather than a clean-cut rejection — left to the project owner.
+- Commit/branch: `review/phrase-independent-override-implementation`
+  (implementation and tests preserved, not merged into the default agent
+  configuration).
+- Limitations and next step: a narrower version — only trust the broadened
+  trigger when the conflicting slot is the one the agent's own previous
+  `ask_attribute` was actually about, rather than any accumulated slot —
+  would have avoided this exact false positive without losing the
+  paraphrase robustness. Deliberately not attempted here, to keep this
+  experiment to one idea; it requires plumbing the previous turn's
+  `ask_attribute` into `respond()`. Evidence:
+  [phrase-independent override](../reports/experiments/phrase-independent-override.md).
 
   ## 5. Current automated test coverage
 
