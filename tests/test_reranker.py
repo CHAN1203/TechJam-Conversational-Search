@@ -64,3 +64,32 @@ class RerankerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CatalogIdfWeightingTest(unittest.TestCase):
+    def test_rare_catalog_terms_outweigh_common_ones(self) -> None:
+        # Both candidates match exactly one query term in their title, so
+        # unweighted field scoring ties them and insertion order wins. A term
+        # held by 40 of 50,000 catalog items says far more about what the
+        # customer wants than one held by 20,000.
+        candidates = [
+            {"parent_asin": "COMMON", "title": "shirt"},
+            {"parent_asin": "RARE", "title": "balaclava"},
+        ]
+        ranked = rerank_candidates(
+            ["shirt", "balaclava"],
+            candidates,
+            2,
+            idf={"shirt": 0.5, "balaclava": 5.0},
+        )
+        self.assertEqual(ranked, ["RARE", "COMMON"])
+
+    def test_omitting_idf_keeps_unweighted_field_scoring(self) -> None:
+        candidates = [
+            {"parent_asin": "COMMON", "title": "shirt"},
+            {"parent_asin": "RARE", "title": "balaclava"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["shirt", "balaclava"], candidates, 2),
+            ["COMMON", "RARE"],
+        )
