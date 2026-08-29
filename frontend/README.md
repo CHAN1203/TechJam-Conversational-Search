@@ -13,6 +13,7 @@ Two processes, from the repository root:
 
 ```powershell
 python -m frontend.server.app
+npm --prefix frontend install
 npm --prefix frontend run dev
 ```
 
