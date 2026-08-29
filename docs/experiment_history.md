@@ -102,6 +102,47 @@
   | description | 0.52226 | Lower-weight supporting text |
   | price | 0.21054 | Too sparse for a default hard filter |
 
+  ### 3.3 Public-session target field coverage
+
+  The catalog-wide coverage above does not describe the 200 public-session
+  targets exactly. Joining each public `ground_truth.parent_asin` back to the
+  frozen catalog matched all 200 sessions to 200 distinct products. Coverage
+  uses the same non-empty-field rule as `analysis/catalog_profile.py`.
+
+  | Field | Full catalog | Public targets | Present | Difference |
+  | --- | ---: | ---: | ---: | ---: |
+  | categories | 1.00000 | 1.000 | 200/200 | +0.000 pp |
+  | title | 0.99996 | 1.000 | 200/200 | +0.004 pp |
+  | details | 0.96660 | 1.000 | 200/200 | +3.340 pp |
+  | store | 0.99372 | 1.000 | 200/200 | +0.628 pp |
+  | features | 0.89562 | 1.000 | 200/200 | +10.438 pp |
+  | description | 0.52226 | 0.445 | 89/200 | -7.726 pp |
+  | price | 0.21054 | **0.890** | **178/200** | **+67.946 pp** |
+  | average_rating | 1.00000 | 1.000 | 200/200 | +0.000 pp |
+  | rating_number | 1.00000 | 1.000 | 200/200 | +0.000 pp |
+
+  The public targets therefore do not follow the catalog-wide field-presence
+  distribution. The largest difference is price: 89.0% of public targets have
+  a price, versus 21.054% of the full catalog. Features are also complete on
+  the public targets, while description coverage is 7.726 percentage points
+  lower than the catalog average.
+
+  The two fields with meaningful missingness vary by scenario:
+
+  | Scenario | Sessions | Price | Description |
+  | --- | ---: | ---: | ---: |
+  | Buying | 80 | 0.9500 | 0.4875 |
+  | Browsing | 80 | 0.8750 | 0.4375 |
+  | Intent Override | 30 | 0.766667 | 0.333333 |
+  | Boundary | 10 | 0.9000 | 0.5000 |
+
+  Price coverage is therefore high across every scenario, not only Buying.
+  This diagnostic measures whether a field is populated; it does not show that
+  category values, price ranges, feature contents, or popularity values follow
+  the full-catalog distribution. The 200 labeled targets are not a random
+  catalog sample, and their coverage must not be assumed to hold for the 800
+  private sessions.
+
   ## 4. Chronological test and experiment record
 
   ### T0: Reproduce the official baseline
