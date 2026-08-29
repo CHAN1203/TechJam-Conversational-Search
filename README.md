@@ -46,6 +46,24 @@ The command writes per-session results and aggregate metrics to `results.json`.
 The included weak BM25 starter scores Hit Rate@10 `0.125`, MRR `0.068034`, and
 MTTC `9.81` on the released public set. See `docs/baseline_results.json`.
 
+## Baseline Diagnostics
+
+Measure the hidden target's first-turn BM25 candidate recall at progressively
+larger cutoffs:
+
+```bash
+python -m scripts.analyze_bm25_recall
+```
+
+Profile missing and populated fields in the frozen catalog:
+
+```bash
+python -m scripts.analyze_catalog
+```
+
+The generated JSON evidence and interpretation are recorded in
+[`reports/baseline/diagnostic-summary.md`](reports/baseline/diagnostic-summary.md).
+
 ## Agent Interface
 
 ```python

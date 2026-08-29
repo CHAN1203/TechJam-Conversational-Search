@@ -1,0 +1,50 @@
+{
+  "row_count": 50000,
+  "fields": {
+    "average_rating": {
+      "present": 50000,
+      "missing": 0,
+      "coverage": 1.0
+    },
+    "categories": {
+      "present": 50000,
+      "missing": 0,
+      "coverage": 1.0
+    },
+    "description": {
+      "present": 26113,
+      "missing": 23887,
+      "coverage": 0.52226
+    },
+    "details": {
+      "present": 48330,
+      "missing": 1670,
+      "coverage": 0.9666
+    },
+    "features": {
+      "present": 44781,
+      "missing": 5219,
+      "coverage": 0.89562
+    },
+    "price": {
+      "present": 10527,
+      "missing": 39473,
+      "coverage": 0.21054
+    },
+    "rating_number": {
+      "present": 50000,
+      "missing": 0,
+      "coverage": 1.0
+    },
+    "store": {
+      "present": 49686,
+      "missing": 314,
+      "coverage": 0.99372
+    },
+    "title": {
+      "present": 49998,
+      "missing": 2,
+      "coverage": 0.99996
+    }
+  }
+}
