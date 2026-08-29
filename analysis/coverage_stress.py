@@ -122,6 +122,38 @@ def _load_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+def _resolve_distinct_paths(
+    source_catalog: str | Path,
+    dataset_path: str | Path,
+    output_catalog: str | Path,
+    manifest_path: str | Path,
+) -> tuple[Path, Path, Path, Path]:
+    paths = {
+        "source_catalog": Path(source_catalog).resolve(),
+        "dataset_path": Path(dataset_path).resolve(),
+        "output_catalog": Path(output_catalog).resolve(),
+        "manifest_path": Path(manifest_path).resolve(),
+    }
+    normalized = {
+        name: os.path.normcase(os.path.normpath(str(path)))
+        for name, path in paths.items()
+    }
+    names = tuple(paths)
+    for index, name in enumerate(names):
+        for other_name in names[index + 1:]:
+            if normalized[name] == normalized[other_name]:
+                raise ValueError(
+                    f"coverage-stress paths must be distinct: {name} and {other_name} "
+                    f"resolve to {paths[name]}"
+                )
+    return (
+        paths["source_catalog"],
+        paths["dataset_path"],
+        paths["output_catalog"],
+        paths["manifest_path"],
+    )
+
+
 def _atomic_write_jsonl(path: Path, rows: Sequence[Mapping[str, object]], validate) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -245,10 +277,9 @@ def build_coverage_stress_catalog(
     fields: Sequence[str] = DEFAULT_FIELDS,
     seed: str = DEFAULT_SEED,
 ) -> dict:
-    source_path = Path(source_catalog)
-    dataset = Path(dataset_path)
-    output = Path(output_catalog)
-    manifest_file = Path(manifest_path)
+    source_path, dataset, output, manifest_file = _resolve_distinct_paths(
+        source_catalog, dataset_path, output_catalog, manifest_path
+    )
     products = _load_jsonl(source_path)
     samples = _load_jsonl(dataset)
     target_ids = [str(row["ground_truth"]["parent_asin"]) for row in samples]

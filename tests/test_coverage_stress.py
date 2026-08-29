@@ -278,6 +278,36 @@ class CoverageStressBuildTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "mask membership mismatch for field: price"):
                 _validate_generated_catalog(catalog_path, tampered_path, ("A", "B"), plans)
 
+    def test_rejects_path_collisions_without_mutating_inputs_or_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            catalog_path, dataset_path, output_path, manifest_path = self._write_fixture(Path(directory))
+            build_coverage_stress_catalog(
+                catalog_path, dataset_path, output_path, manifest_path, self.fields, "fixed"
+            )
+            original_hashes = {
+                path: file_sha256(path)
+                for path in (catalog_path, dataset_path, output_path, manifest_path)
+            }
+            collision_cases = (
+                (catalog_path, manifest_path),
+                (output_path, output_path),
+                (output_path, dataset_path),
+            )
+            for collided_output, collided_manifest in collision_cases:
+                with self.assertRaisesRegex(ValueError, "paths must be distinct"):
+                    build_coverage_stress_catalog(
+                        catalog_path,
+                        dataset_path,
+                        collided_output,
+                        collided_manifest,
+                        self.fields,
+                        "fixed",
+                    )
+                self.assertEqual(
+                    original_hashes,
+                    {path: file_sha256(path) for path in original_hashes},
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
