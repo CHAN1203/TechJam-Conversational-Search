@@ -15,6 +15,30 @@ STOPWORDS = {
     "that", "the", "this", "to", "want", "with", "would", "you", "looking",
 }
 CANDIDATE_POOL_SIZE = 100
+PROFILE_ATTRIBUTE_MAP = {
+    "material": "material",
+    "fit": "size",
+    "comfort": "feature",
+    "durability": "feature",
+    "style": "style",
+    "weather": "use_case",
+    "warmth": "use_case",
+    "color": "color",
+}
+DEFAULT_ATTRIBUTE_ORDER = (
+    "material", "size", "style", "feature", "use_case", "color", "brand", "budget", "other",
+)
+ATTRIBUTE_QUESTIONS = {
+    "material": "Do you have a material preference?",
+    "size": "Do you have any sizing or fit requirements?",
+    "style": "What style or fit do you prefer?",
+    "feature": "Which product feature matters most to you?",
+    "use_case": "What will you mainly use it for?",
+    "color": "Do you have a color preference?",
+    "brand": "Do you have a preferred brand?",
+    "budget": "What budget range should I use?",
+    "other": "Is there another requirement I should prioritize?",
+}
 
 
 def _text(value: object) -> str:
@@ -35,13 +59,42 @@ def _terms(text: str) -> list[str]:
     ]
 
 
+def _constraint_terms(message: str) -> list[str]:
+    lowered = message.lower()
+    if any(phrase in lowered for phrase in (
+        "don't have a preference",
+        "don't have an additional preference",
+        "do not have a preference",
+        "no preference",
+    )):
+        return []
+    return _terms(message)
+
+
+def _is_intent_override(message: str) -> bool:
+    lowered = message.lower()
+    return lowered.startswith("actually") and "ignore my earlier preference" in lowered
+
+
+def _attribute_order(user_profile: dict) -> list[str]:
+    tags = user_profile.get("preference_tags") or []
+    preferred = [
+        PROFILE_ATTRIBUTE_MAP[str(tag).lower()]
+        for tag in tags
+        if str(tag).lower() in PROFILE_ATTRIBUTE_MAP
+    ]
+    return list(dict.fromkeys([*preferred, *DEFAULT_ATTRIBUTE_ORDER]))
+
+
 class Agent:
-    """Editable weak baseline: stateless BM25 retrieval with no LLM dependency."""
+    """Offline multi-turn retrieval agent with no LLM dependency."""
 
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
         self.catalog_path = Path(catalog_path)
         self.connection = sqlite3.connect(":memory:")
-        self._sessions: set[str] = set()
+        self._session_terms: dict[str, list[str]] = {}
+        self._session_attribute_order: dict[str, list[str]] = {}
+        self._session_asked_attributes: dict[str, set[str]] = {}
         self._build_index()
 
     def _build_index(self) -> None:
@@ -75,7 +128,9 @@ class Agent:
 
     def reset(self, session_id: str, user_profile: dict) -> None:
         # The profile is anonymized and may be used for personalization.
-        self._sessions.add(session_id)
+        self._session_terms[session_id] = []
+        self._session_attribute_order[session_id] = _attribute_order(user_profile)
+        self._session_asked_attributes[session_id] = set()
 
     def respond(
         self,
@@ -84,9 +139,12 @@ class Agent:
         turn: int,
         top_k: int,
     ) -> dict:
-        if session_id not in self._sessions:
+        if session_id not in self._session_terms:
             raise RuntimeError("reset must be called before respond")
-        unique_terms = list(dict.fromkeys(_terms(user_message)))[:40]
+        current_terms = _constraint_terms(user_message)
+        previous_terms = [] if _is_intent_override(user_message) else self._session_terms[session_id]
+        unique_terms = list(dict.fromkeys([*previous_terms, *current_terms]))[:40]
+        self._session_terms[session_id] = unique_terms
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
         if not expression:
             recommendations: list[dict] = []
@@ -113,9 +171,19 @@ class Agent:
                 {"parent_asin": parent_asin}
                 for parent_asin in rerank_candidates(unique_terms, candidates, top_k)
             ]
+        asked = self._session_asked_attributes[session_id]
+        ask_attribute = next(
+            (attribute for attribute in self._session_attribute_order[session_id] if attribute not in asked),
+            None,
+        )
+        if ask_attribute is not None:
+            asked.add(ask_attribute)
         return {
-            "message": "Here are the closest matches I found.",
-            "ask_attribute": None,
+            "message": ATTRIBUTE_QUESTIONS.get(
+                ask_attribute,
+                "Here are the closest matches I found.",
+            ),
+            "ask_attribute": ask_attribute,
             "recommendations": recommendations,
             "usage": {"prompt_tokens": 0, "completion_tokens": 0},
         }
