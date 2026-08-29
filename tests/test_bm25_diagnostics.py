@@ -2,7 +2,28 @@ from __future__ import annotations
 
 import unittest
 
-from analysis.bm25_diagnostics import rank_of, summarize_ranks
+from analysis.bm25_diagnostics import measure_first_turn, rank_of, summarize_ranks
+
+
+class RankedAgent:
+    def reset(self, session_id: str, user_profile: dict) -> None:
+        self.session_id = session_id
+
+    def respond(
+        self,
+        session_id: str,
+        user_message: str,
+        turn: int,
+        top_k: int,
+    ) -> dict:
+        return {
+            "message": "matches",
+            "ask_attribute": None,
+            "recommendations": [
+                {"parent_asin": value}
+                for value in ["A", "TARGET", "C"][:top_k]
+            ],
+        }
 
 
 class Bm25DiagnosticsTest(unittest.TestCase):
@@ -31,6 +52,32 @@ class Bm25DiagnosticsTest(unittest.TestCase):
                 },
             },
         })
+
+    def test_measure_first_turn_records_target_rank(self) -> None:
+        samples = [{
+            "sample_id": "sample-1",
+            "scenario_type": "buying",
+            "user_profile": {"summary": "fixture"},
+            "ground_truth": {"parent_asin": "TARGET"},
+            "intent_card": {
+                "target_category": "shoe",
+                "hard_constraints": ["leather"],
+                "soft_preferences": ["walking"],
+            },
+            "behavior": {"scenario_type": "buying"},
+        }]
+        records = measure_first_turn(
+            RankedAgent(),
+            samples,
+            {"TARGET": ["Clothing", "Shoes"]},
+            {},
+            cutoff=100,
+        )
+        self.assertEqual(records, [{
+            "sample_id": "sample-1",
+            "scenario_type": "buying",
+            "rank": 2,
+        }])
 
 
 if __name__ == "__main__":
