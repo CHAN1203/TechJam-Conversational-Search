@@ -8,12 +8,18 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E15 Narrow Phrase-Independent Override, with public
-> HitRate@10 `0.970`, MRR `0.671744`, MTTC `2.930`, and TechnicalScore
-> `0.847923` -- identical to E13 on every measurable public-set session
-> (0/200 differ); E15 is the recommended default because it adds robustness
-> to a differently-worded override on the private set at zero measured cost,
-> not because the public score moved.
+> Current best: E13 Buying/Browsing Routing, with public HitRate@10 `0.970`,
+> MRR `0.671744`, MTTC `2.930`, and TechnicalScore `0.847923`.
+>
+> E15 was reverted after review: its result is not an improvement on any
+> measurable metric (0/200 public sessions differ from E13). Its only
+> claimed value was an unverifiable bet that the private set phrases an
+> override differently than the public simulator's one fixed sentence --
+> real added state and logic for a risk that cannot be confirmed from here.
+> That is a judgment call about risk tolerance, not evidence of being
+> "better," and calling it a "clean win" during review overstated it.
+> Preserved on `review/narrow-phrase-independent-override-implementation`
+> in case that judgment call is revisited later.
 
   Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
   recording another method.
@@ -45,9 +51,9 @@
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 | E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
 | E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
-| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E15 (same score, added robustness) | Local, not pushed |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | **Current best** | Local, not pushed |
 | E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
-| E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | **Keep (0/200 sessions differ from E13)** | Local, not pushed |
+| E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -694,21 +700,36 @@
   full 200-session public set. Verified at the session level, not just
   aggregate: comparing `sessions[]` against E13's stored evidence JSON
   gives 0 differing sessions out of 200.
-- Decision: **Keep. New current best**, in the sense of "the recommended
-  default going forward" -- not because the public score moved (it
-  provably cannot: the public simulator only ever phrases an override one
-  way), but because this closes a risk `slot-memory-and-retrieval-ablation.md`
-  and T16 both flagged, at a session-level-verified zero cost.
-- Commit/branch: local commit on
-  `experiment/narrow-phrase-independent-override`, not pushed to the
-  shared remote.
+- Initial decision (later corrected on review): recorded here as "Keep, new
+  current best" on the reasoning that it closes a real, twice-documented
+  private-set risk (the literal-phrase dependency) at zero measured public
+  cost.
+- **Correction after review:** this is not an improvement on any
+  measurable metric -- 0/200 public sessions differ from E13, full stop.
+  The entire claimed value rests on an *unverifiable* assumption: that the
+  private set's 800 sessions phrase a change of mind differently than the
+  public simulator's one fixed sentence. There is no way to confirm this
+  from here (the private evaluator is not available), and if the private
+  set generates override messages the same way, this change does nothing
+  at all, ever, while still adding real state (`_session_last_asked`,
+  `_session_slot_topic`) and logic to maintain. Calling this a "clean win"
+  during initial reporting overstated it -- it is a judgment call about
+  risk tolerance with a real complexity cost and an unproven benefit, not
+  evidence of being better. **Reverted** at the project owner's direction;
+  `main` is back to E13 byte-for-byte
+  (`starter/agent.py`, `tests/test_conversation_state.py` checked out from
+  E13's commit `92d4714`).
+- Commit/branch: implementation preserved on
+  `review/narrow-phrase-independent-override-implementation` (renamed from
+  `experiment/narrow-phrase-independent-override`), not merged into `main`,
+  not pushed to the shared remote.
 - Limitations and next step: this is still narrower than "any conflict,
   anywhere" -- a slot's first legitimate value can only be established on
   the opening turn, when volunteered unprompted, or when directly asked
   about. A genuine change of mind about something the customer stated
   purely as contamination (never legitimately, on its own terms) still
-  cannot be detected; this is judged an acceptable, deliberate precision
-  tradeoff rather than a gap to close next. Evidence:
+  cannot be detected. Whether to revisit this at all should wait for actual
+  evidence about private-set override phrasing, not another guess. Evidence:
   [narrow phrase-independent override](../reports/experiments/narrow-phrase-independent-override.md).
 
   ## 5. Current automated test coverage

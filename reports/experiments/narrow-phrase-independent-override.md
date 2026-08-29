@@ -1,9 +1,13 @@
 # Narrow Phrase-Independent Intent Override
 
 Date: 2026-08-30
-Status: **kept.** Public-set behavior is byte-identical to E13, session for
-session (0/200 differ) -- a pure robustness improvement with a proven zero
-cost on the metric that can be measured here.
+Status: **reverted on review.** Public-set behavior is byte-identical to
+E13, session for session (0/200 differ) -- not an improvement on any
+measurable metric. Initially reported as a "clean win" on the reasoning
+that it closes a real, unverifiable private-set risk (see
+`docs/experiment_history.md`'s T19 entry for the correction); the project
+owner judged that tradeoff not worth the added state and reverted it.
+Preserved on `review/narrow-phrase-independent-override-implementation`.
 
 ## Hypothesis
 
