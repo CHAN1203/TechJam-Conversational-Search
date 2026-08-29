@@ -55,6 +55,7 @@
 | E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
 | E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
 | E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Local, not pushed |
+| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Local, not pushed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -87,6 +88,7 @@
 | E14 Expected-value clarification | 0.9625 | 1.0000 | **0.966667** | 0.9000 |
 | E15 Narrow phrase-independent override | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 | E16 Dense retrieval (standalone) | 0.6750 | 0.6750 | 0.633333 | 0.6000 |
+| E17 RRF hybrid retrieval | 0.9375 | 0.9750 | 0.900000 | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -783,6 +785,58 @@
 - Limitations and next step: `n_components` and `max_features` are
   reasoned defaults, not swept. Evidence:
   [dense retrieval](../reports/experiments/dense-retrieval.md).
+
+### T21: RRF hybrid retrieval (rejected; mechanism traced)
+
+- Date: 2026-08-30
+- Origin: `TechJam.docx` Layer 1's third option -- fuse BM25's and dense's
+  leaderboards by Reciprocal Rank Fusion rather than replacing one with the
+  other. T20 found real, if narrow, complementary signal (2 unique dense
+  hits) motivating a genuine attempt at fusion.
+- Change: new `starter/fusion.py::reciprocal_rank_fusion` (standard RRF,
+  `k=60`). `Agent(retrieval_mode="rrf")` fetches BM25's and dense's top-100
+  independently, fuses, and truncates to the top 100 by fused rank -- that
+  set feeds the existing reranker unchanged. `bm25` mode internals
+  refactored into a shared `_bm25_rank()` helper, confirmed byte-identical
+  by regression test.
+- New tests: 8 (6 in `tests/test_fusion.py`, 2 agent-integration). One
+  test's own premise was wrong on inspection -- RRF's convex scoring means
+  extreme ranks {1,3} score marginally higher than middling ranks {2,2}, a
+  real property, not a bug -- corrected before trusting it. 107/107 project
+  tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --retrieval-mode rrf --output reports/experiments/rrf-hybrid-retrieval.json
+  ```
+
+- Result: HitRate@10 `0.945`, MRR `0.665696`, MTTC `3.065`, TechnicalScore
+  `0.830909` (E13: `0.847923`, `-0.017014`). Session-by-session: 1 recovered
+  (`public_0071`), 6 lost. Net -5.
+- **Root cause, traced precisely** on `public_0040` (an E13 rank-1 hit):
+  the target enters BM25's own top-100 at turn 6, but only at rank 72 --
+  not in dense's top-100 at all. E13's reranker evidently promotes a
+  mediocre-BM25-rank-but-correct candidate very effectively once it's in
+  the pool (rank 72 -> rank 1, via field weighting + completeness bonus +
+  popularity). Under RRF, the candidate *pool itself* is truncated to 100
+  by fused rank *before* the reranker runs: other products' joint
+  BM25+dense agreement pushes the target's fused rank outside the top 100
+  entirely, so the reranker never sees it. Not a reranking failure --
+  retrieval discarding a correct candidate to make room for one whose only
+  qualification is agreement between two lists, one of which (dense, E16:
+  TechnicalScore `0.600` standalone) is meaningfully noisier here.
+- Decision: **Reject.** Confirms E16's own predicted risk exactly: fusing a
+  much weaker signal into a much stronger one can demote good candidates as
+  easily as promote missed ones. Net here: 6 lost for 1 recovered.
+- Commit/branch: local commit on `experiment/rrf-hybrid-retrieval`, not
+  pushed.
+- Limitations and next step: take the **union** of both top-100 lists
+  (padding, not truncating) instead of truncating the fused ranking, so
+  dense can only ever add candidates BM25's own net missed, never displace
+  ones it already caught. Not attempted here, to test standard RRF as the
+  doc describes it first. Evidence:
+  [rrf hybrid retrieval](../reports/experiments/rrf-hybrid-retrieval.md).
 
   ## 5. Current automated test coverage
 
