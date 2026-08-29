@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 
 from starter.clarification import select_attribute
+from starter.dense import DenseIndex
 from starter.slots import extract_slots
 from starter.reranker import rerank_candidates
 
@@ -123,10 +124,12 @@ class Agent:
         clarification_policy: str = "candidate",
         gazetteer_path: str | Path = "data/gazetteer.json",
         popularity_weight: float = POPULARITY_WEIGHT,
+        retrieval_mode: str = "bm25",
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.popularity_weight = popularity_weight
+        self.retrieval_mode = retrieval_mode
         self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
         self._session_terms: dict[str, list[str]] = {}
@@ -148,26 +151,39 @@ class Agent:
         )
         batch: list[tuple[str, str, str, str, str, str, str]] = []
         self._popularity: dict[str, float] = {}
+        self._products: dict[str, dict] = {}
+        dense_asins: list[str] = []
+        dense_texts: list[str] = []
         with self.catalog_path.open(encoding="utf-8") as handle:
             for line in handle:
                 product = json.loads(line)
+                parent_asin = str(product["parent_asin"])
                 try:
-                    self._popularity[str(product["parent_asin"])] = float(
-                        product.get("rating_number") or 0.0
-                    )
+                    self._popularity[parent_asin] = float(product.get("rating_number") or 0.0)
                 except (TypeError, ValueError):
-                    self._popularity[str(product["parent_asin"])] = 0.0
-                batch.append(
-                    (
-                        str(product["parent_asin"]),
-                        _text(product.get("title")),
-                        _text(product.get("categories")),
-                        _text(product.get("features")),
-                        _text(product.get("details")),
-                        _text(product.get("store")),
-                        _text(product.get("description")),
-                    )
+                    self._popularity[parent_asin] = 0.0
+                fields = (
+                    _text(product.get("title")),
+                    _text(product.get("categories")),
+                    _text(product.get("features")),
+                    _text(product.get("details")),
+                    _text(product.get("store")),
+                    _text(product.get("description")),
                 )
+                batch.append((parent_asin, *fields))
+                self._products[parent_asin] = {
+                    "parent_asin": parent_asin,
+                    "title": fields[0],
+                    "categories": fields[1],
+                    "features": fields[2],
+                    "details": fields[3],
+                    "store": fields[4],
+                    "description": fields[5],
+                    "rating_number": self._popularity[parent_asin],
+                }
+                if self.retrieval_mode in ("dense", "rrf"):
+                    dense_asins.append(parent_asin)
+                    dense_texts.append(" ".join(fields))
                 if len(batch) >= 1000:
                     cursor.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?)", batch)
                     batch.clear()
@@ -177,6 +193,9 @@ class Agent:
         self.document_count = self.connection.execute(
             "SELECT count(*) FROM products"
         ).fetchone()[0]
+        self.dense_index = (
+            DenseIndex(dense_asins, dense_texts) if self.retrieval_mode in ("dense", "rrf") else None
+        )
 
     def _catalog_idf(self, terms: list[str]) -> dict[str, float]:
         """Weight each query term by how rare it is across the whole catalog.
@@ -270,9 +289,16 @@ class Agent:
             }
             required_terms = slot_terms & set(unique_terms)
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
-        if not expression:
-            candidates: list[dict] = []
-            recommendations: list[dict] = []
+        query_text = " ".join(unique_terms)
+        if self.retrieval_mode == "dense":
+            # Isolated comparison only: replaces BM25 candidates entirely so
+            # dense retrieval's own recall can be measured on its own,
+            # before any fusion with BM25 (see reports/experiments/dense-retrieval.md).
+            pool_size = max(top_k, CANDIDATE_POOL_SIZE)
+            dense_hits = self.dense_index.search(query_text, pool_size) if self.dense_index else []
+            candidates = [self._products[asin] for asin in dense_hits if asin in self._products]
+        elif not expression:
+            candidates = []
         else:
             rows = self.connection.execute(
                 "SELECT parent_asin, title, categories, features, details, store, description "
@@ -293,6 +319,9 @@ class Agent:
                 }
                 for row in rows
             ]
+        if not candidates:
+            recommendations: list[dict] = []
+        else:
             recommendations = [
                 {"parent_asin": parent_asin}
                 for parent_asin in rerank_candidates(

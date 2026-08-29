@@ -54,6 +54,7 @@
 | E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | **Current best** | Local, not pushed |
 | E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
 | E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
+| E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Local, not pushed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -85,6 +86,7 @@
 | E13 Buying/Browsing routing | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 | E14 Expected-value clarification | 0.9625 | 1.0000 | **0.966667** | 0.9000 |
 | E15 Narrow phrase-independent override | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
+| E16 Dense retrieval (standalone) | 0.6750 | 0.6750 | 0.633333 | 0.6000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -731,6 +733,56 @@
   cannot be detected. Whether to revisit this at all should wait for actual
   evidence about private-set override phrasing, not another guess. Evidence:
   [narrow phrase-independent override](../reports/experiments/narrow-phrase-independent-override.md).
+
+### T20: Dense retrieval, standalone (rejected; feeds E17)
+
+- Date: 2026-08-30
+- Origin: `TechJam.docx` Layer 1 lists Dense Retrieval, never attempted --
+  retrieval has always been lexical BM25. A full transformer embedding
+  model is feasible (network access works) but risks real per-turn latency
+  at scale; Latent Semantic Analysis (TF-IDF + Truncated SVD) is inference-
+  only after one startup fit, needs no downloaded weights, and is a real,
+  if older and weaker, dense-embedding technique.
+- Prediction recorded *before* running anything: this project's own
+  `slot-memory-and-retrieval-ablation.md` documents that the practice
+  simulator's disclosed constraints are sliced verbatim from the target's
+  own catalog metadata -- there is no organic paraphrasing in the public
+  set for a semantic method to bridge, so little to no gain was expected
+  here specifically.
+- Change: new `starter/dense.py::DenseIndex`. New `Agent(retrieval_mode=...)`
+  constructor argument; `"dense"` replaces BM25 candidate retrieval
+  entirely for this isolated test (not a proposed final design). Default
+  (`"bm25"`) is unchanged, confirmed by a dedicated regression test.
+- New tests: 14 (`tests/test_dense.py`, plus 2 agent-integration tests).
+  93/93 project tests pass. New `scripts/run_retrieval_mode.py`.
+- New dependency: `scikit-learn` (+ `scipy`, `joblib`, `threadpoolctl`).
+  First non-stdlib dependency this project has introduced.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --retrieval-mode dense --output reports/experiments/dense-retrieval.json
+  ```
+
+- Result: HitRate@10 `0.665`, MRR `0.534054`, MTTC `5.625`, TechnicalScore
+  `0.600216` (E13: `0.847923`). Matches the prediction: much weaker overall,
+  as expected, since this strips out E1/E11/E13's accumulated reranking,
+  popularity, and routing machinery to isolate retrieval quality alone.
+- **The actual finding:** session-by-session against E13 -- dense recovers
+  2 of E13's 6 public misses (`public_0052`, `public_0179`) that BM25 never
+  reaches at all, while losing 63 sessions BM25 gets right. Not strictly
+  worse everywhere: genuine complementary recall, exactly the signal RRF
+  fusion is designed to combine.
+- Startup cost: ~26s one-time `TruncatedSVD` fit (not per-turn), full
+  200-session eval ~32s after that.
+- Decision: **Reject as a standalone mode.** Proceed directly to E17 (RRF
+  fusion) using this experiment's dense index and complementarity evidence
+  -- this experiment's purpose was exactly to produce that evidence before
+  attempting fusion.
+- Commit/branch: local commit on `experiment/dense-retrieval`, not pushed.
+- Limitations and next step: `n_components` and `max_features` are
+  reasoned defaults, not swept. Evidence:
+  [dense retrieval](../reports/experiments/dense-retrieval.md).
 
   ## 5. Current automated test coverage
 

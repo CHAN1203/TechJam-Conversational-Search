@@ -416,3 +416,46 @@ class BuyingBrowsingRoutingTest(ConversationStateTest):
             [{"parent_asin": "ALL-MATCH"}, {"parent_asin": "MORE-HITS"}],
             response["recommendations"],
         )
+
+
+class DenseRetrievalModeTest(ConversationStateTest):
+    def test_dense_mode_finds_a_semantically_close_product_with_no_exact_word_overlap(self) -> None:
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        products = [
+            {
+                "parent_asin": "SNEAKER",
+                "title": "Athletic sneaker jogging trainer footwear",
+                "categories": "Shoes", "features": "running shoe", "details": {},
+                "store": "Example", "description": [],
+            },
+            {
+                "parent_asin": "HAT",
+                "title": "Wide brim sun hat headwear",
+                "categories": "Accessories", "features": "sun protection", "details": {},
+                "store": "Example", "description": [],
+            },
+        ]
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in products), encoding="utf-8"
+        )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text("{}", encoding="utf-8")
+
+        agent = Agent(catalog_path, gazetteer_path=gazetteer_path, retrieval_mode="dense")
+        agent.reset("session", {})
+        response = agent.respond("session", "shoe jogging trainer", 1, 1)
+
+        self.assertEqual([{"parent_asin": "SNEAKER"}], response["recommendations"])
+
+    def test_bm25_mode_is_unaffected_by_the_new_constructor_argument(self) -> None:
+        agent = self.build_agent([
+            {
+                "parent_asin": "SHIRT",
+                "title": "Red Shirt",
+                "categories": "Shirts", "features": "", "details": {},
+                "store": "Example", "description": [],
+            },
+        ])
+        response = agent.respond("session", "red shirt", 1, 1)
+        self.assertEqual([{"parent_asin": "SHIRT"}], response["recommendations"])
