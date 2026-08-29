@@ -16,7 +16,9 @@ def _evaluate_catalog(catalog_path: str | Path, samples: list[dict]) -> dict:
     return {key: value for key, value in result.items() if key != "sessions"}
 
 
-def run_catalog_evaluation(variants: dict[str, Path], samples: list[dict]) -> dict:
+def run_catalog_evaluation(
+    variants: dict[str, Path], samples: list[dict], manifest: dict | None = None
+) -> dict:
     results = {
         name: _evaluate_catalog(path, samples)
         for name, path in variants.items()
@@ -28,8 +30,9 @@ def run_catalog_evaluation(variants: dict[str, Path], samples: list[dict]) -> di
     shared_scenarios = sorted(
         set(official["scenario_metrics"]) & set(stress["scenario_metrics"])
     )
-    return {
+    payload = {
         "schema_version": 1,
+        "primary_catalog": "official",
         "catalogs": results,
         "deltas": {
             "direction": "coverage_stress_minus_official",
@@ -43,6 +46,9 @@ def run_catalog_evaluation(variants: dict[str, Path], samples: list[dict]) -> di
             },
         },
     }
+    if manifest is not None:
+        payload["stress_manifest"] = manifest
+    return payload
 
 
 def main() -> None:
@@ -61,7 +67,7 @@ def main() -> None:
         args.stress_manifest,
         seed=args.stress_seed,
     )
-    result = run_catalog_evaluation(variants, load_jsonl(args.dataset))
+    result = run_catalog_evaluation(variants, load_jsonl(args.dataset), manifest=_manifest)
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
