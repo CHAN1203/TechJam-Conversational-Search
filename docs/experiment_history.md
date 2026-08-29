@@ -42,6 +42,7 @@
 | E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
 | E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
 | E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | **Current best** | Local, not pushed |
+| E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -71,6 +72,7 @@
 | E11 Popularity prior | 0.9500 | **1.0000** | **0.933333** | 0.9000 |
 | E12 Phrase-independent override | 0.9500 | 0.9875 | **0.933333** | 0.9000 |
 | E13 Buying/Browsing routing | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
+| E14 Expected-value clarification | 0.9625 | 1.0000 | **0.966667** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -576,6 +578,69 @@
   reading of the scenario spec but is itself untested against a "reclassify
   if a constraint firms up later" alternative. Evidence:
   [buying/browsing routing](../reports/experiments/buying-browsing-routing.md).
+
+### T18: Expected-value clarification (rejected, close)
+
+- Date: 2026-08-29
+- Origin: `TechJam.docx`'s Layer 4 names this as the explicit next-step
+  option: score each attribute by how much it can "statistically eliminate
+  the most incorrect products," not yet implemented. The default `candidate`
+  policy's `coverage * diversity` heuristic ignores how a covered attribute's
+  values are actually *distributed*, and requires >= 2 distinct known values,
+  discarding an informative has-it/lacks-it split.
+- Hypothesis: scoring by Shannon entropy of each attribute's value
+  distribution over the Top-100 pool (with an explicit "unmatched" bucket)
+  is a more faithful "expected information gain" and should ask
+  better-targeted questions.
+- Change: new `_expected_value_order()` in `starter/clarification.py`, added
+  as a fourth policy string alongside `fixed`/`profile`/`candidate` -- the
+  default (`candidate`) is untouched pending the result.
+- New tests: 7, in `tests/test_clarification.py`
+  (`ExpectedValuePolicyTest`) — a tie-breaking comparison the coverage
+  heuristic cannot resolve, a zero-entropy skip, a has-it/lacks-it split the
+  heuristic structurally cannot consider, and an already-asked guard. All
+  red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_clarification_ablation --policies candidate expected_value
+  python -m evaluator.local_evaluator
+  ```
+
+- Result (full 200-session set): HitRate@10 `0.975` (+1 session over E13),
+  MRR `0.670619` (E13: `0.671744`), MTTC `3.060` (E13: `2.930`),
+  TechnicalScore `0.847486` (E13: `0.847923`, `-0.000437`).
+- Validation-split TechnicalScore (`techjam-clarification-v1`, 80 sessions,
+  the project's own decision rule for a clarification-policy choice):
+  `candidate` `0.850222` vs `expected_value` `0.848503` — `candidate` wins.
+  Development split (120 sessions) narrowly favors `expected_value`
+  (`0.846808` vs `0.846391`), so the two splits don't fully agree, but the
+  validation split is the one the workflow says to decide on.
+- Scenario: buying and browsing HitRate@10 unchanged, but MRR softens
+  slightly in both (buying `0.720952 -> 0.705327`, browsing
+  `0.665595 -> 0.659345`). Intent Override genuinely improves — one more
+  hit, `0.933333 -> 0.966667`, MRR `0.587685 -> 0.611296`. Boundary
+  HitRate@10 unchanged; MRR improves (`0.579444 -> 0.661111`) but MTTC
+  worsens (`3.6 -> 4.4`).
+- Interpretation: not "entropy doesn't work" — it demonstrably helps the
+  hardest scenario. With 160 of 200 sessions in Buying+Browsing, a small
+  per-session softening there outweighs a real win concentrated in the
+  30-session Intent Override scenario, in the aggregate score.
+- Decision: **Reject as the default.** Both the pre-registered threshold
+  and the project's own validation-split rule point the same direction, so
+  there's no ambiguity to resolve in its favor. Genuinely close — a
+  `0.0437%` full-set difference, within noise range for this sample size.
+- Commit/branch: `review/expected-value-clarification-implementation`
+  (implementation and tests preserved, not merged into the default).
+- Limitations and next step: route the *clarification policy* the same way
+  E13 routes retrieval — use `expected_value` only once an Intent Override
+  is detected (mirroring E10's already-tried override-routed pattern, but
+  applied at Layer 4 instead of Layer 2), so Buying/Browsing keep
+  `candidate` while Intent Override sessions get the policy that measurably
+  helps them. Not attempted here, to keep this experiment to one idea.
+  Evidence:
+  [expected-value clarification](../reports/experiments/expected-value-clarification.md).
 
   ## 5. Current automated test coverage
 
