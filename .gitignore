@@ -3,6 +3,9 @@ __pycache__/
 .DS_Store
 .env
 .worktrees/
+# Local Chinese translations. English files are the Git-tracked source of truth.
+docs/zh-CN/
+reports/zh-CN/
 results.json
 results_*.json
 data/catalog.jsonl

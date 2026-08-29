@@ -1,45 +1,52 @@
-# 实验历史与方法对比矩阵
+# Experiment History and Method Comparison Matrix
 
-这份文件是项目的实验总账。每次改变检索、排序、对话状态或提问策略，
-都必须在这里追加结果，包括失败实验。这样可以直接回答三个问题：
+This file is the project's experiment ledger. Every change to retrieval,
+ranking, conversation state, or question policy must add a result here,
+including failed experiments. It should answer three questions directly:
 
-1. 我们从哪里开始？
-2. 每次具体改了什么？
-3. 哪个方法最好，为什么保留或淘汰？
+1. Where did the project start?
+2. What changed in each experiment?
+3. Which method is best, and why was each method kept or rejected?
 
-> 当前最佳：E9 Slot conflict resolution，Public HitRate@10 `0.895`，
-> MRR `0.549056`，MTTC `4.215`，TechnicalScore `0.747917`。
+> Current best: E9 Slot Conflict Resolution, with public HitRate@10 `0.895`,
+> MRR `0.549056`, MTTC `4.215`, and TechnicalScore `0.747917`.
 
-## 1. 方法对比矩阵
+Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
+recording another method.
 
-所有正式结果都使用完整的 200-session public set、50,000-item frozen
-catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的方法的变化。
+## 1. Method comparison matrix
 
-| ID | 方法 | 主要变化 | 自动测试 | HitRate@10 | Δ HitRate | MRR | MTTC ↓ | Efficiency | TechnicalScore | Δ Score | 决定 | Commit |
+All formal results use the full 200-session public set, the frozen 50,000-item
+catalog, and the unmodified official evaluator. `Δ` is measured against the
+previous retained method.
+
+| ID | Method | Main change | Automated tests | HitRate@10 | Δ HitRate | MRR | MTTC ↓ | Efficiency | TechnicalScore | Δ Score | Decision | Commit |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| E0 | Weak BM25 baseline | BM25 直接返回 Top-10；无状态；不提问 | 3 | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | 基线 | `3407835` |
-| E1 | Field reranker v1 | BM25 Top-100 后按字段覆盖重新排序 | 10 | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **保留** | `db65ad2` |
-| E1-A | Reranker + BM25 rank prior | 在 E1 分数上加入原 BM25 排名先验 | Targeted | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | 淘汰 | 未提交 |
-| E2 | Conversation State v1 | 累积约束、处理 override、profile 引导且不重复提问 | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | 保留 | `d770b6f` |
-| E3-A | Fixed clarification | 固定属性提问顺序 | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | 淘汰 | `fa84de2` |
-| E3-B | Profile clarification | E2 的 profile-first 策略，作为消融基准 | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | 旧基线 | `fa84de2` |
-| E3-C | Candidate-aware clarification | 优先询问 Top-100 候选中有覆盖且有差异的属性 | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | **当前最佳** | `fa84de2` |
-| E4 | Always-ask-other probe | 每轮固定询问 `other`，其余逻辑不变；仅作诊断 | 35 | 0.840 | -0.030 | 0.522508 | 3.635 | 0.7365 | 0.724052 | -0.006019 | 淘汰（诊断用） | 未提交 |
-| E5 | Slot-aware override memory | override 时保留 category/department slot，其余清除 | 41 | **0.875** | +0.005 | 0.540300 | **4.290** | 0.6710 | **0.733790** | +0.003719 | 保留（证据弱） | 未提交 |
-| E6 | Turn-aware override memory | override 时额外保留第 2 轮起通过提问获得的约束 | 48 | 0.875 | +0.000 | 0.540300 | 4.290 | 0.6710 | 0.733790 | +0.000000 | 淘汰（无效果） | 未提交 |
-| E7 | Candidate pool 100 -> 500 | 仅放大 BM25 候选池，其余不变 | 51 | 0.875 | +0.000 | 0.528762 | 4.190 | 0.6810 | 0.732329 | -0.001461 | 淘汰 | 未提交 |
-| E8-A | Pool-frequency IDF（错误实现） | 用候选池内词频当 IDF | 53 | 0.790 | -0.085 | 0.459067 | 4.975 | 0.6025 | 0.653220 | -0.080570 | 淘汰（推理错误） | 未提交 |
-| E8-B | Catalog IDF + pool 500 | fts5vocab 全库 df 加权 | 54 | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | 淘汰 | 未提交 |
-| E8-C | Catalog IDF + pool 100 | 同上，候选池保持 100 | 54 | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | 淘汰 | 未提交 |
-| E9 | Slot conflict resolution | gazetteer 每个词只归属一个槽位；pool 100、无 IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | **当前最佳** | 未提交 |
-| E10 | Override-routed IDF | 检测到 override 后才启用 catalog IDF，其余场景不变 | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | 淘汰 | 未提交 |
+| E0 | Weak BM25 baseline | Return BM25 Top-10 directly; no state or questions | 3 | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | Baseline | `3407835` |
+| E1 | Field reranker v1 | Rerank BM25 Top-100 by field coverage | 10 | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **Keep** | `db65ad2` |
+| E1-A | Reranker + BM25 rank prior | Add the original BM25 rank as a bonus to E1 | Targeted | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | Reject | Not committed |
+| E2 | Conversation State v1 | Accumulate constraints, handle overrides, ask profile-guided non-repeating questions | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | Keep | `d770b6f` |
+| E3-A | Fixed clarification | Use a fixed attribute question order | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | Reject | `fa84de2` |
+| E3-B | Profile clarification | Use the E2 profile-first policy as the ablation baseline | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | Previous baseline | `fa84de2` |
+| E3-C | Candidate-aware clarification | Ask first about a covered, varied attribute in the Top-100 candidates | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | **Current best** | `fa84de2` |
+| E4-A | Balanced clarification | Prioritize the intersection of profile preferences and current product differences | 23 during experiment | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | Reject | Review branch only |
+| E4-B | Always-ask-other probe | Always ask `other`; diagnostic only | 35 | 0.840 | -0.030 | 0.522508 | 3.635 | 0.7365 | 0.724052 | -0.006019 | Reject (diagnostic) | Not separately committed |
+| E5 | Slot-aware override memory | Preserve category/department slots during override; clear the rest | 41 | **0.875** | +0.005 | 0.540300 | **4.290** | 0.6710 | **0.733790** | +0.003719 | Keep (weak evidence) | Included in remote series |
+| E6 | Turn-aware override memory | Also preserve constraints learned from turn 2 onward | 48 | 0.875 | +0.000 | 0.540300 | 4.290 | 0.6710 | 0.733790 | +0.000000 | Reject (no effect) | Included in remote series |
+| E7 | Candidate pool 100 -> 500 | Increase only the BM25 candidate pool | 51 | 0.875 | +0.000 | 0.528762 | 4.190 | 0.6810 | 0.732329 | -0.001461 | Reject | Included in remote series |
+| E8-A | Pool-frequency IDF (incorrect) | Treat candidate-pool term frequency as IDF | 53 | 0.790 | -0.085 | 0.459067 | 4.975 | 0.6025 | 0.653220 | -0.080570 | Reject (reasoning error) | Included in remote series |
+| E8-B | Catalog IDF + pool 500 | Weight with catalog-wide `fts5vocab` document frequency | 54 during experiment | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | Reject | Included in remote series |
+| E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
+| E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | **Current best** | `c1941f6` merge series |
+| E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 
-`E1-A` 的 targeted test 曾完成 red-green，但对应行为因为 evaluator 回归而被
-删除，所以它没有进入最终测试套件或 Git commit。失败结果仍然保留在矩阵中。
+The E1-A targeted test completed a red-green cycle. The behavior was then
+removed because the evaluator regressed, so it is not in the final test suite
+or a Git commit. The failed result remains in this matrix.
 
-## 2. 各场景 HitRate@10 矩阵
+## 2. HitRate@10 by scenario
 
-| 方法 | Buying | Browsing | Intent Override | Boundary |
+| Method | Buying | Browsing | Intent Override | Boundary |
 | --- | ---: | ---: | ---: | ---: |
 | E0 Weak BM25 | 0.2375 | 0.0250 | 0.133333 | 0.0000 |
 | E1 Field reranker v1 | 0.2375 | 0.0875 | 0.133333 | 0.2000 |
@@ -48,7 +55,8 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E3-A Fixed clarification | 0.8750 | **0.9625** | 0.566667 | 0.9000 |
 | E3-B Profile clarification | **0.8875** | **0.9625** | 0.533333 | **1.0000** |
 | E3-C Candidate-aware clarification | 0.8750 | **0.9625** | **0.600000** | 0.9000 |
-| E4 Always-ask-other probe | 0.8875 | **0.9625** | 0.333333 | **1.0000** |
+| E4-A Balanced clarification | **0.8875** | **0.9625** | 0.533333 | **1.0000** |
+| E4-B Always-ask-other probe | 0.8875 | **0.9625** | 0.333333 | **1.0000** |
 | E5 Slot-aware override memory | 0.8750 | **0.9625** | **0.633333** | 0.9000 |
 | E6 Turn-aware override memory | 0.8750 | 0.9625 | 0.633333 | 0.9000 |
 | E7 Pool 500 | 0.8625 | 0.9500 | 0.700000 | 0.9000 |
@@ -58,17 +66,17 @@ catalog 和未修改的官方 evaluator。`Δ` 表示相对上一项被保留的
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
 | E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
 
-这张表不能单独证明 private-set 表现。它的用途是找出回归发生在哪个场景，
-避免总分提升掩盖某一类用户体验变差。
+This table cannot prove private-set performance. It identifies which scenario
+regressed so that an aggregate improvement does not hide a worse user experience.
 
-## 3. 前置诊断矩阵
+## 3. Diagnostic matrices before implementation
 
-### 3.1 BM25 第一轮候选召回
+### 3.1 First-turn BM25 candidate recall
 
-Candidate Recall 只回答目标有没有进入较大的候选池，不等于最多十轮的官方
-HitRate@10。
+Candidate Recall asks whether the target entered a larger candidate pool. It is
+not the official, up-to-ten-turn HitRate@10.
 
-| 场景 | Sessions | Recall@10 | Recall@50 | Recall@100 | Recall@500 |
+| Scenario | Sessions | Recall@10 | Recall@50 | Recall@100 | Recall@500 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Overall | 200 | 0.185 | 0.380 | 0.525 | 0.860 |
 | Buying | 80 | 0.2375 | 0.4750 | 0.5875 | 0.9375 |
@@ -76,39 +84,40 @@ HitRate@10。
 | Intent Override | 30 | 0.533333 | 0.666667 | 0.833333 | 0.966667 |
 | Boundary | 10 | 0.0000 | 0.3000 | 0.4000 | 0.7000 |
 
-结论：目标从 Top-10 的 37 个增加到 Top-500 的 172 个，主要问题首先是排序，
-所以先做 reranker，而不是立刻引入 dense retrieval。
+Conclusion: the number of targets found grows from 37 in the Top-10 to 172 in
+the Top-500. Ranking is therefore the first measured problem, so the project
+tested a reranker before adding dense retrieval.
 
-### 3.2 Catalog 字段覆盖率
+### 3.2 Catalog field coverage
 
-| 字段 | Coverage | 实验用途 |
+| Field | Coverage | Experimental use |
 | --- | ---: | --- |
-| categories | 1.00000 | 主类别与粗粒度意图 |
-| title | 0.99996 | 最高权重的商品匹配 |
-| details | 0.96660 | 属性与规格约束 |
-| store | 0.99372 | 品牌/店铺补充信号 |
-| features | 0.89562 | 功能、材质、使用场景 |
-| description | 0.52226 | 低权重补充文本 |
-| price | 0.21054 | 不适合作为默认硬过滤条件 |
+| categories | 1.00000 | Main category and broad intent |
+| title | 0.99996 | Highest-weight product matching |
+| details | 0.96660 | Attribute and specification constraints |
+| store | 0.99372 | Supporting brand/store signal |
+| features | 0.89562 | Feature, material, and use-case terms |
+| description | 0.52226 | Lower-weight supporting text |
+| price | 0.21054 | Too sparse for a default hard filter |
 
-## 4. 按时间记录做过的测试
+## 4. Chronological test and experiment record
 
-### T0：官方基线复现
+### T0: Reproduce the official baseline
 
-- 日期：2026-08-29
-- 方法：未修改的官方 weak BM25 starter。
-- 命令：`python -m evaluator.local_evaluator`
-- 数据：200 public sessions，50,000 catalog items。
-- 结果：HitRate@10 `0.125`，MRR `0.068034`，MTTC `9.81`，
-  TechnicalScore `0.106710`。
-- 作用：建立所有后续方法的固定比较点。
+- Date: 2026-08-29
+- Method: unmodified official weak BM25 starter.
+- Command: `python -m evaluator.local_evaluator`
+- Data: 200 public sessions and 50,000 catalog items.
+- Result: HitRate@10 `0.125`, MRR `0.068034`, MTTC `9.81`, TechnicalScore
+  `0.106710`.
+- Purpose: establish the fixed comparison point for every later method.
 
-### T1：BM25 候选召回与 catalog coverage
+### T1: BM25 candidate recall and catalog coverage
 
-- 新增 candidate rank、Recall@10/50/100/500 和按场景汇总。
-- 新增 catalog 空值/非空值统计。
-- 自动测试从 3 个增加到 7 个。
-- 命令：
+- Added candidate rank, Recall@10/50/100/500, and per-scenario summaries.
+- Added populated/missing statistics for catalog fields.
+- Automatic tests increased from 3 to 7.
+- Commands:
 
   ```powershell
   python -m scripts.analyze_bm25_recall
@@ -116,315 +125,359 @@ HitRate@10。
   python -m unittest discover -s tests -v
   ```
 
-- 结论：优先测试 Top-100/500 的轻量 reranking。
-- Commits：`583e79c`、`e33c097`、`c51573a`、`c438628`。
-- 详细证据：[baseline diagnostic summary](../reports/baseline/diagnostic-summary.md)。
+- Conclusion: test lightweight reranking over Top-100/500 candidates first.
+- Commits: `583e79c`, `e33c097`, `c51573a`, `c438628`.
+- Detailed evidence: [baseline diagnostic summary](../reports/baseline/diagnostic-summary.md).
 
-### T2：Field reranker v1
+### T2: Field reranker v1
 
-- BM25 候选池从 10 扩到 100。
-- 每个 query term 只计算最高价值字段匹配：title `4.0`、categories
-  `3.0`、features/details `2.0`、store `1.5`、description `1.0`。
-- 分数相同则保留 BM25 原顺序。
-- TDD 新增 reranker unit tests 和真实 SQLite FTS5 integration test。
-- 自动测试从 7 个增加到 10 个。
-- 结果：HitRate@10 `0.160`，TechnicalScore `0.133825`。
-- 决定：保留。
-- Commit：`db65ad2`。
-- 详细证据：[local reranker v1](../reports/experiments/local-reranker-v1.md)。
+- Expanded the BM25 candidate pool from 10 to 100.
+- Counted only the highest-value field match for each query term: title `4.0`,
+  categories `3.0`, features/details `2.0`, store `1.5`, description `1.0`.
+- Preserved original BM25 order when scores tied.
+- Added reranker unit tests and a real SQLite FTS5 integration test using TDD.
+- Automatic tests increased from 7 to 10.
+- Result: HitRate@10 `0.160`, TechnicalScore `0.133825`.
+- Decision: Keep.
+- Commit: `db65ad2`.
+- Detailed evidence: [local reranker v1](../reports/experiments/local-reranker-v1.md).
 
-### T3：BM25 rank prior ablation
+### T3: BM25 rank-prior ablation
 
-- 假设：保留部分 BM25 排名先验可以减少 E1 丢失的 5 个旧命中。
-- 改变：为 reranker 加入随 BM25 rank 衰减的 bonus。
-- 结果：HitRate@10 `0.155`，TechnicalScore `0.129498`，低于 E1。
-- 决定：淘汰；删除对应代码和只保护该失败行为的测试。
-- Commit：无。结果记录在 E1 报告与本文件中。
+- Hypothesis: retaining part of the BM25 order could recover five E1 losses.
+- Change: added a bonus that decreases with original BM25 rank.
+- Result: HitRate@10 `0.155`, TechnicalScore `0.129498`, below E1.
+- Decision: Reject; remove the code and the test that protected only the failed behavior.
+- Commit: none. Results remain in the E1 report and this ledger.
 
-### T4：Conversation State v1
+### T4: Conversation State v1
 
-- 跨轮累积有效 query constraints。
-- 对明确的 no-preference 回复不加入查询词。
-- Intent Override 时清除旧约束。
-- 根据 anonymized profile tags 决定 ask_attribute 顺序，且不重复提问。
-- 每轮同时返回 clarification question 和 Top-10 recommendations。
-- TDD 新增 4 个 conversation behavior tests。
-- 自动测试从 10 个增加到 14 个。
-- 泄漏检查：`starter/` 不引用 `ground_truth`、`public_set`、`intent_card`
-  或 evaluator behavior fields。
-- 结果：HitRate@10 `0.870`，TechnicalScore `0.723824`。
-- 决定：保留，为当时最佳；后由 E3-C 取代。
-- Commit：`d770b6f`。
-- 详细证据：[conversation state v1](../reports/experiments/conversation-state-v1.md)。
+- Accumulated valid query constraints across turns.
+- Excluded explicit no-preference replies from query terms.
+- Cleared old constraints when the user overrode the earlier intent.
+- Used anonymized profile tags for non-repeating ask-attribute order.
+- Returned a clarification question and Top-10 recommendations on every turn.
+- Added four conversation behavior tests with TDD.
+- Automatic tests increased from 10 to 14.
+- Leakage check: `starter/` does not reference `ground_truth`, `public_set`,
+  `intent_card`, or evaluator behavior fields.
+- Result: HitRate@10 `0.870`, TechnicalScore `0.723824`.
+- Decision: Keep; it was later replaced by E3-C as the best method.
+- Commit: `d770b6f`.
+- Detailed evidence: [conversation state v1](../reports/experiments/conversation-state-v1.md).
 
-### T5：独立 worktree 重现
+### T5: Reproduce results in an isolated worktree
 
-- 从 `d770b6f` 创建 `experiment/clarification-ablation`。
-- 使用 hard link 复用同一份 `data/catalog.jsonl`。
-- 14/14 tests 通过。
-- 完整 evaluator 再次得到 HitRate@10 `0.870`、MRR `0.533748`、
-  MTTC `4.565`、TechnicalScore `0.723824`。
-- 结论：新实验环境与稳定分支的基线一致，可以开始 clarification ablation。
+- Created `experiment/clarification-ablation` from `d770b6f`.
+- Reused the same `data/catalog.jsonl` through a hard link.
+- 14/14 tests passed.
+- The full evaluator reproduced HitRate@10 `0.870`, MRR `0.533748`, MTTC
+  `4.565`, and TechnicalScore `0.723824`.
+- Conclusion: the experiment environment matched the stable branch and was
+  ready for clarification ablation.
 
-### T6：固定切分与 Clarification Policy Ablation
+### T6: Fixed split and clarification-policy ablation
 
-- 日期：2026-08-29。
-- 用 seed `techjam-clarification-v1` 按 scenario/difficulty 将 public set 固定分为
-  120 development sessions 和 80 validation sessions。
-- 对比 fixed、profile、candidate 三种策略；其余检索、排序和状态逻辑不变。
-- 选择规则：只用 validation TechnicalScore 选胜者。
-- Validation score：fixed `0.750158`、profile `0.741824`、candidate
-  `0.755720`。
-- 决定：candidate 胜出并设为默认；fixed 淘汰，profile 保留为可选 ablation。
-- Full public：HitRate@10 `0.870`、MRR `0.544236`、MTTC `4.410`、
-  TechnicalScore `0.730071`。
-- 实现 commit：`fa84de2`。
-- 详细证据：[clarification policy ablation](../reports/experiments/clarification-ablation.md)。
+- Date: 2026-08-29.
+- Used seed `techjam-clarification-v1` to split the public set by scenario and
+  difficulty into 120 development and 80 validation sessions.
+- Compared fixed, profile, and candidate policies while keeping retrieval,
+  ranking, and state logic unchanged.
+- Selection rule: choose only by validation TechnicalScore.
+- Validation scores: fixed `0.750158`, profile `0.741824`, candidate `0.755720`.
+- Decision: candidate wins and becomes default; fixed is rejected and profile
+  remains available as an ablation baseline.
+- Full public: HitRate@10 `0.870`, MRR `0.544236`, MTTC `4.410`,
+  TechnicalScore `0.730071`.
+- Implementation commit: `fa84de2`.
+- Detailed evidence: [clarification policy ablation](../reports/experiments/clarification-ablation.md).
 
-### T7：Candidate 策略性能复测
+### T7: Candidate-policy performance rerun
 
-- 初次完整运行：candidate `144.189s`，profile `82.447s`。
-- 优化：每个候选只进行一次文本分词，六种属性复用 token set。
-- 优化后 candidate：`88.492s`，全部指标与优化前逐项相同。
-- 自动测试增加到 21 个；默认 Agent 走 candidate 策略的行为由 integration test 锁定。
-- 官方 evaluator 默认入口复测得到 TechnicalScore `0.730071`。
+- First full run: candidate `144.189s`, profile `82.447s`.
+- Optimization: tokenize each candidate once and reuse the token set for all six
+  attributes.
+- Optimized candidate run: `88.492s`, with every metric unchanged.
+- Automatic tests increased to 21; an integration test locks the default Agent
+  to the candidate policy.
+- The official evaluator entry point reproduced TechnicalScore `0.730071`.
 
-### T8：Always-ask-other 提问上限诊断
+### T8: Balanced clarification ablation
 
-- 日期：2026-08-29
-- 假设：本地 simulator 的 `customer_reply` 对 `other` 返回最多两条未披露约束，
-  而每个具体属性只返回一条；因此固定询问 `other` 可以测出"提问策略"能带来的
-  收益上限。
-- 观察到的 evaluator 行为：`classify_constraint` 只会返回 budget、material、
-  color、size、style、use_case、feature。`category` 与 `brand` 永远无法匹配，
-  询问这两个属性在本地必定得到"没有额外偏好"。
-- 改变：新增 `other` clarification policy（固定返回 `other`，忽略 asked 集合）。
-  检索、排序、conversation state 全部不变。
-- 结果：HitRate@10 `0.840`、MRR `0.522508`、MTTC `3.635`、
-  TechnicalScore `0.724052`，低于 E3-C `0.730071`。
-- 分场景：buying `0.8875`、browsing `0.9625`、boundary `1.0000` 均持平或略好；
-  intent_override 从 `0.600000` 跌到 `0.333333`。
-- 机制：`other` 在前两轮就抽干了 intent card 的四条约束，等到第 3/4 轮 override
-  到达、状态被清空后，simulator 已无未披露信息可给，session 无法恢复。
-- 结论：**提问策略在 buying / browsing / boundary 上已接近饱和**，继续优化
-  "问哪个属性"收益很小；真正的瓶颈是 intent_override 的状态处理
-  （两种策略的 MTTC 都在 8.5 左右）。
-- 决定：淘汰。仅作为诊断保留，不作为提交策略——private simulator 不保证对
-  `other` 有相同行为。
-- Commit：未提交。
-- 详细证据：[clarification-other-probe.json](../reports/experiments/clarification-other-probe.json)
+- Date: 2026-08-29.
+- Reason: on full public, E3-C found one fewer Buying and one fewer Boundary
+  target than profile.
+- Read-only reruns tied the failures to a generic material answer and a Boundary
+  first-turn no-preference response that spent an important question.
+- Method: first ask about a profile preference when it also varies across the
+  current candidates; otherwise use candidate order.
+- TDD: added two tests for prioritizing a varied preference and skipping a
+  preference with no candidate variation; 23/23 tests passed during the experiment.
+- Validation: Candidate `0.755720`, Balanced `0.743074`, down `0.012646`.
+- Full public: Balanced recovered one Buying and one Boundary hit but lost two
+  Intent Override hits; TechnicalScore fell from `0.730071` to `0.725074`.
+- Decision: Reject; Candidate remains the default. The exact rejected code and
+  tests are preserved on `review/balanced-clarification-implementation`.
+- Detailed evidence: [balanced clarification experiment](../reports/experiments/balanced-clarification.md).
 
-### T9：Slot-aware override memory
+### T9: Always-ask-other question ceiling probe
 
-- 日期：2026-08-29
-- 假设：T8 显示提问策略已饱和，真正瓶颈是 intent_override 的状态处理。
-  override 时清空全部约束会连"买什么品类"一起丢掉，应只替换被改写的槽位。
-- 改变：
-  - 新增 `analysis/gazetteer.py`，从 frozen catalog 挖掘 department / category /
-    material / color / style / size 词表，产出 `data/gazetteer.json`（19KB）。
-  - 新增 `starter/slots.py`，把用户消息中的词归入槽位，最长匹配优先。
-  - `starter/agent.py`：override 时保留 `DURABLE_SLOTS`（category、department），
-    除非同一条消息为该槽位给出了替代值；其余槽位清除。
-  - gazetteer 文件缺失或损坏时回退为空词表，检索行为与 E3-C 完全一致。
-- 词表覆盖率（相对原手写常量）：material `54.7% -> 81.6%`、
-  color `33.3% -> 69.5%`、size `20.9% -> 51.0%`、style `36.5% -> 61.1%`。
-- 自动测试从 35 增加到 41。既有的
-  `test_intent_override_replaces_earlier_constraints` 断言"override 清空全部约束"，
-  与本次改动直接冲突，已改写为"丢弃被撤销的值但保留品类"，并通过临时把
-  `DURABLE_SLOTS` 置空验证该测试确实会失败（第一版 fixture 无区分力，已修正）。
-  既有测试原本隐式依赖 `data/gazetteer.json` 是否存在，现改为在临时目录自带词表。
-- 结果：HitRate@10 `0.875`、MRR `0.540300`、MTTC `4.290`、
-  TechnicalScore `0.733790`（E3-C 为 `0.730071`，`+0.003719`）。
-- 分场景：buying / browsing / boundary 三项完全不变；
-  intent_override `0.600000 -> 0.633333`，MTTC `8.500 -> 7.700`。
-- 解读：方向正确——唯一变化的场景正是目标场景，且命中率与轮数同时改善。
-  但幅度很小：`+0.033333` 在 30 个 intent_override session 上只等于**多命中 1 个**，
-  单独不足以证明有效。MRR 反而略降 `-0.003936`。
-- 限制与下一步：override 后目前只保留 durable slot，把第 2 轮之后通过提问获得的
-  约束一并丢弃，而这些约束并未被用户撤销。下一步应按"来源轮次"保留：
-  丢弃第 1 轮的旧偏好与被新消息替换的槽位，保留提问得到的答案。
-- Commit：未提交。
+- Date: 2026-08-29.
+- Hypothesis: the local simulator's `customer_reply` returns up to two undisclosed
+  constraints for `other`, but only one for a specific attribute. Always asking
+  `other` can therefore estimate the local upper bound of question-policy gains.
+- Observed evaluator behavior: `classify_constraint` can return only budget,
+  material, color, size, style, use_case, and feature. `category` and `brand`
+  never match, so asking either locally always receives no additional preference.
+- Change: add an `other` clarification policy that always returns `other` and
+  ignores the asked set. Retrieval, ranking, and conversation state stay fixed.
+- Result: HitRate@10 `0.840`, MRR `0.522508`, MTTC `3.635`, TechnicalScore
+  `0.724052`, below E3-C at `0.730071`.
+- Scenarios: buying `0.8875`, browsing `0.9625`, and boundary `1.0000` are flat
+  or slightly better; intent_override falls from `0.600000` to `0.333333`.
+- Mechanism: `other` exhausts the intent card's four constraints in the first two
+  turns. When the turn 3/4 override clears state, the simulator has no undisclosed
+  information left, so the session cannot recover.
+- Conclusion: question choice is close to saturated for Buying, Browsing, and
+  Boundary. The larger bottleneck is Intent Override state handling; both
+  policies have MTTC near `8.5` there.
+- Decision: Reject and keep only as a diagnostic. The private simulator is not
+  guaranteed to implement `other` in the same way.
+- Commit: not separate from the remote experiment series.
+- Evidence: [clarification-other-probe.json](../reports/experiments/clarification-other-probe.json)
 
-### T10：Turn-aware override memory（无效果）
+### T10: Slot-aware override memory
 
-- 日期：2026-08-29
-- 假设：E5 在 override 时只保留 durable slot，把第 2 轮起通过提问获得的约束
-  一并丢弃，而这些约束并未被用户撤销。按到达轮次保留应能再救回一些 session。
-- 改变：slot 记录到达轮次；override 时保留 durable slot 与 `arrived > 1` 的值，
-  丢弃第 1 轮自述偏好与被新消息替换的槽位。
-- 结果：HitRate@10 `0.875`、MRR `0.540300`、MTTC `4.290`、
-  TechnicalScore `0.733790`——**与 E5 逐项完全相同**，四个场景也全部相同。
-- 诊断（30 个 intent_override session）：两种规则的保留集合只在 **4 个 session**
-  中不同，26 个完全一致；这 4 个的命中与排名均未改变。虽然 23 个 session 确实
-  存在"第 2 轮起获得的非 durable 约束"，但它们大多同时被 override 消息命名，
-  两种规则都会丢弃。
-- 决定：淘汰（无测量效果）。代码保留 turn-aware 版本，因为它更贴合"撤销的是
-  开场偏好"的语义，且没有额外成本；但不得声称它带来收益。
-- 附带发现：gazetteer 存在跨槽位污染，例如 `small` 同时进入 color 与 size，
-  probe 中出现 `'color': {'small': 3}`；`women` 同时进入 department 与 category。
-  这是 E5 引入的缺陷，需要在下一步修正。
-- 结论：override 的记忆规则不是 intent_override 的瓶颈。两轮迭代累计只带来
-  `+0.003719`，应停止在此方向继续调优，转向检索侧（候选池大小、IDF、dense）。
-- Commit：未提交。
+- Date: 2026-08-29.
+- Hypothesis: T9 shows that question choice is saturated and the real bottleneck
+  is Intent Override state handling. Clearing all constraints also discards the
+  product category, so the agent should replace only the slots that changed.
+- Changes:
+  - Add `analysis/gazetteer.py` to mine department, category, material, color,
+    style, and size vocabularies from the frozen catalog, producing the 19 KB
+    `data/gazetteer.json`.
+  - Add `starter/slots.py` to assign message terms to slots, preferring the
+    longest match.
+  - Update `starter/agent.py` to preserve `DURABLE_SLOTS` (category and
+    department) during override unless the same message replaces that slot;
+    clear the remaining slots.
+  - Fall back to an empty vocabulary when the gazetteer is absent or invalid,
+    matching E3-C retrieval behavior.
+- Vocabulary coverage versus the previous hand-written constants: material
+  `54.7% -> 81.6%`, color `33.3% -> 69.5%`, size `20.9% -> 51.0%`, and style
+  `36.5% -> 61.1%`.
+- Automatic tests increased from 35 to 41. The previous override test expected
+  all constraints to be cleared, so it was rewritten to require dropping the
+  revoked value while preserving category. Temporarily emptying `DURABLE_SLOTS`
+  confirmed that the corrected test fails without the behavior. Tests now carry
+  their own temporary gazetteer instead of depending on the repository file.
+- Result: HitRate@10 `0.875`, MRR `0.540300`, MTTC `4.290`, TechnicalScore
+  `0.733790`, which is `+0.003719` over E3-C at `0.730071`.
+- Scenarios: Buying, Browsing, and Boundary are unchanged. Intent Override rises
+  from `0.600000` to `0.633333`, and its MTTC improves from `8.500` to `7.700`.
+- Interpretation: only the intended scenario changes, in the intended direction,
+  but `+0.033333` is only one extra hit among 30 Intent Override sessions. MRR
+  also falls slightly by `0.003936`, so the evidence is weak.
+- Limitation and next step: the current override keeps durable slots but drops
+  answers learned after turn 1 even when the user did not revoke them. Test
+  retaining constraints by source turn next.
+- Commit: included in the remote experiment series.
 
-### T11：Gazetteer 跨槽位污染修正
+### T11: Turn-aware override memory (no measurable effect)
 
-- 日期：2026-08-29
-- 问题：E5 引入的 gazetteer 中有 27 个词同时属于多个槽位，例如 `small` 同时进入
-  color 与 size、`women` 同时进入 department 与 category、`hoodie` 同时进入
-  category 与 style。probe 中出现 `'color': {'small': 3}`。
-- 为什么不能用支持度打破平局：category 的计数来自 taxonomy 节点，attribute 的
-  计数来自自由文本覆盖，两者量纲不同；而 `silver` 在 material 与 color 下计数
-  完全相同（2935），因为覆盖率是在同一段文本上测的，计数本身不含槽位信息。
-- 方案：固定优先级 `department > material > size > category > color > style`，
-  按来源可信度排序，每个词只归属最高优先级的槽位。
-- 结果：842 个词中跨槽位数量 `27 -> 0`。抽查全部正确：`small -> size`、
-  `silver -> material`、`cotton -> material`、`women -> department`、
-  `hoodie -> category`、`sneaker -> category`。
-- 自动测试增加到 51。
+- Date: 2026-08-29.
+- Hypothesis: E5 keeps only durable slots during override and discards question
+  answers learned from turn 2 onward even when the user did not revoke them.
+  Preserving by arrival turn may recover more sessions.
+- Change: record the arrival turn for each slot. During override, keep durable
+  slots and values with `arrived > 1`; drop volunteered turn-1 preferences and
+  slots replaced by the new message.
+- Result: HitRate@10 `0.875`, MRR `0.540300`, MTTC `4.290`, TechnicalScore
+  `0.733790`—identical to E5 in every aggregate and scenario metric.
+- Diagnosis across 30 Intent Override sessions: the two rules preserve different
+  sets in only four sessions, and none changes hit or rank. Although 23 sessions
+  contain a non-durable constraint learned after turn 1, the override message
+  usually names that slot, so both rules remove it.
+- Decision: Reject because it has no measured effect. Keep the turn-aware code
+  because it better matches the intended meaning and adds no cost, but do not
+  claim a score gain.
+- Additional finding: the gazetteer has cross-slot contamination. For example,
+  `small` appears in both color and size, producing `'color': {'small': 3}`;
+  `women` appears in both department and category.
+- Conclusion: further override-memory tuning is not the next bottleneck. The two
+  iterations add only `0.003719`; investigate the gazetteer and retrieval instead.
+- Commit: included in the remote experiment series.
 
-### T12：候选池放大与 IDF 加权（全部淘汰）
+### T12: Fix gazetteer cross-slot contamination
 
-- 日期：2026-08-29
-- 假设：诊断显示 Recall@100 `0.525`、Recall@500 `0.860`，放大候选池应能提升召回；
-  reranker 无 IDF，罕见词与常见词等权，加入 IDF 应能提升排序。
-- E7（pool 500）：TechnicalScore `0.732329`，低于 pool 100 的 `0.733790`。
-  intent_override 从 `0.633333` 升到 `0.700000`，但 browsing 与 buying 各降一个
-  session，MRR 下降 `0.011538`。
-- E8-A（错误实现）：用**候选池内**词频计算 IDF，得分暴跌到 `0.653220`。
-  原因：候选池是"已经匹配该查询的文档集合"，查询中最关键的词恰恰出现在几乎
-  所有候选中，pool-frequency 会把它判为无区分度并降权，信号完全反了。
-  IDF 必须在全库上计算。
-- E8-B / E8-C（正确实现）：改用 `fts5vocab` 取全库 document frequency，
-  pool 500 得 `0.706786`、pool 100 得 `0.719494`，仍然都低于基线 `0.733790`。
-- 2x2 对比：
+- Date: 2026-08-29.
+- Problem: 27 gazetteer terms belong to more than one slot. Examples include
+  `small` in color and size, `women` in department and category, and `hoodie`
+  in category and style. A probe shows `'color': {'small': 3}`.
+- Why support count cannot break ties: category counts come from taxonomy nodes
+  while attribute counts come from free-text coverage, so they use different
+  scales. `silver` also has the same count, 2935, under material and color
+  because both are measured against the same text.
+- Method: use fixed source-reliability precedence—`department > material > size
+  > category > color > style`—and assign each term to only the highest-priority slot.
+- Result: cross-slot terms fall from 27 to 0 among 842 terms. Spot checks map
+  `small -> size`, `silver -> material`, `cotton -> material`, `women -> department`,
+  `hoodie -> category`, and `sneaker -> category`.
+- Automatic tests increased to 51.
 
-  | | 无 IDF | Catalog IDF |
+### T13: Candidate-pool and IDF ablations (all rejected)
+
+- Date: 2026-08-29.
+- Hypothesis: Recall@100 is `0.525` and Recall@500 is `0.860`, so a larger pool
+  may improve recall. The reranker also weights rare and common terms equally;
+  IDF may improve ordering.
+- E7, pool 500: TechnicalScore `0.732329`, below pool 100 at `0.733790`.
+  Intent Override rises from `0.633333` to `0.700000`, but Browsing and Buying
+  each lose one session and MRR falls by `0.011538`.
+- E8-A, incorrect implementation: computing IDF from the candidate pool drops
+  TechnicalScore to `0.653220`. The candidate pool already contains documents
+  matched by the query, so its most useful term appears in most candidates and
+  is incorrectly downweighted. IDF must be computed over the whole catalog.
+- E8-B/E8-C, correct implementation: use `fts5vocab` catalog document frequency.
+  Pool 500 scores `0.706786`; pool 100 scores `0.719494`. Both trail `0.733790`.
+- Two-by-two comparison:
+
+  | | No IDF | Catalog IDF |
   | --- | ---: | ---: |
   | pool 100 | **0.733790** | 0.719494 |
   | pool 500 | 0.732329 | 0.706786 |
 
-- 关键观察：两个改动都**提升 intent_override、损害 browsing**。
-  intent_override 最好成绩出现在 E8-C 的 `0.733333`（基线 `0.633333`，多命中 3 个），
-  但 browsing 从 `0.9625` 跌到 `0.9000`（少命中 5 个）。browsing 有 80 个 session、
-  intent_override 只有 30 个，所以总分被 browsing 的损失主导。
-- 决定：E7、E8-A/B/C 全部淘汰，恢复 pool 100 且不使用 IDF。
-  `rerank_candidates` 保留可选 `idf` 参数（有单元测试），供后续 routing 实验使用。
-- 下一步：这组数据支持 **scenario routing**——agent 自己知道 override 何时发生，
-  可以只在 override 之后启用 IDF，其余情况保持现状。不预测收益幅度。
-- Commit：未提交。
+- Key observation: both changes improve Intent Override but damage Browsing.
+  E8-C reaches Intent Override `0.733333`, up three hits from `0.633333`, while
+  Browsing falls from `0.9625` to `0.9000`, down five hits. With 80 Browsing
+  sessions and only 30 Intent Override sessions, Browsing losses dominate.
+- Decision: reject E7 and E8-A/B/C; restore pool 100 with no IDF. Keep the tested
+  optional `idf` argument in `rerank_candidates` for later routing experiments.
+- Next step: test scenario routing because the agent can observe an override and
+  change retrieval only after that turn. No gain is assumed in advance.
+- Commit: included in the remote experiment series.
 
-### T13：干净 gazetteer 的独立测量（当前最佳）
+### T14: Measure the clean gazetteer independently (current best)
 
-- 日期：2026-08-29
-- 背景：E5/E6 的分数是在**含跨槽位污染**的 gazetteer 上测的；T11 修好污染后
-  一直没有在 pool 100 + 无 IDF 的配置下单独复测。E7/E8 的失败掩盖了这一点。
-- 配置：pool 100、无 IDF、干净 gazetteer。相对 E6 唯一的行为差异就是 gazetteer。
-- 结果：HitRate@10 `0.895`、MRR `0.549056`、MTTC `4.215`、
-  TechnicalScore `0.747917`（E6 为 `0.733790`，`+0.014127`）。
-- 分场景：intent_override `0.633333 -> 0.766667`（多命中 4 个），
-  browsing `0.9625`、buying `0.8750`、boundary `0.9000` 均未变差。
-- 解读：污染本身在破坏 override 逻辑。`small` 被归为 color 时，一次尺寸回答会把
-  color 槽标记为"已被替换"，从而丢掉真正的颜色约束；`women` 同时属于 category
-  时，一次性别提及会清空品类槽。E5/E6 是在错误的槽位归属之上做更聪明的记忆规则，
-  修好数据本身才释放了它们想要的收益。
-- 相对 E3-C 基线的累计：TechnicalScore `0.730071 -> 0.747917`（`+0.017846`），
-  intent_override `0.600000 -> 0.766667`（多命中 5 个）。
-- 限制：仍然只是 200-session public set 的结果，intent_override 只有 30 个 session。
-  private set 未验证。
-- Commit：未提交。
+- Date: 2026-08-29.
+- Background: E5/E6 were measured with a contaminated gazetteer. After T12 fixed
+  it, no isolated pool-100/no-IDF run was made because E7/E8 failures obscured it.
+- Configuration: pool 100, no IDF, clean gazetteer. The only behavior difference
+  from E6 is the gazetteer.
+- Result: HitRate@10 `0.895`, MRR `0.549056`, MTTC `4.215`, TechnicalScore
+  `0.747917`, which is `+0.014127` over E6 at `0.733790`.
+- Scenarios: Intent Override rises from `0.633333` to `0.766667`, four extra hits.
+  Browsing `0.9625`, Buying `0.8750`, and Boundary `0.9000` do not regress.
+- Interpretation: contamination itself damaged override logic. When `small` was
+  classified as color, a size answer marked color as replaced and discarded a
+  real color constraint. When `women` was also category, a gender mention could
+  clear category. E5/E6 applied better memory logic to incorrect slot data;
+  fixing the data released the intended gain.
+- Cumulative change from E3-C: TechnicalScore `0.730071 -> 0.747917`
+  (`+0.017846`) and Intent Override `0.600000 -> 0.766667`, five extra hits.
+- Limitation: this is still the 200-session public set, including only 30 Intent
+  Override sessions. Private-set behavior is unverified.
+- Commit: merged to remote main in `c1941f6`.
 
-### T14：Override-routed IDF（淘汰）
+- Date: 2026-08-29
+- Hypothesis: T12's 2x2 shows IDF improves intent_override but hurts browsing. Browsing never sends
+  override, so by placing IDF behind the agent's own observable signal of "override detected,"
+  we should be able to capture the gain without paying the cost.
+- Change: `_session_override_seen` records per-session whether an override has appeared; once it
+  appears, rerank for the rest of that session is passed `_catalog_idf`, otherwise it's passed `None`.
+- Route isolation verified: boundary `0.9000`, browsing `0.9625`, buying `0.8750`
+  are **identical item-for-item** to E9, and MTTC is also identical. The branch only fires
+  where it's supposed to.
+- Result: intent_override `0.766667 -> 0.733333` (one fewer hit),
+  MTTC `7.200 -> 7.567`, TechnicalScore `0.747917 -> 0.745112`.
+- Key evidence: intent_override under IDF is `0.733333` on both **contaminated gazetteer** (E8-C)
+  and **clean gazetteer** (E10) — exactly the same; whereas the no-IDF baseline, after fixing the
+  contamination, rises from `0.633333` to `0.766667`. This shows IDF is not an additive gain but a
+  **substitute** for the contamination fix: both are correcting the same problem (indiscriminate
+  words getting equal weight). Once the slots are clean, IDF has nothing left to do — it just
+  reimposes its own ceiling.
+- Side observation: MRR actually rises `+0.002652` while HitRate drops. When IDF hits, it ranks
+  higher — but there are fewer hits. It shifts weight toward rare words: a gain when the word
+  matches, nothing when it doesn't.
+- Decision: retire it. The routing mechanism itself is correct and clean; the problem is that IDF
+  adds no incremental value for this task. Reverted — `starter/agent.py` is now byte-identical to E9.
+- Commit: not committed (record only).
 
-- 日期：2026-08-29
-- 假设：T12 的 2x2 显示 IDF 提升 intent_override、损害 browsing。browsing 从不发送
-  override，因此把 IDF 放在"检测到 override 之后"这个 agent 自己可观测的信号后面，
-  应该能只拿收益、不付代价。
-- 改变：`_session_override_seen` 逐 session 记录 override 是否出现；出现后本 session
-  的 rerank 传入 `_catalog_idf`，否则传 `None`。
-- 路由隔离性验证通过：boundary `0.9000`、browsing `0.9625`、buying `0.8750`
-  与 E9 **逐项完全相同**，MTTC 也完全相同。分支只在应该触发的地方触发。
-- 结果：intent_override `0.766667 -> 0.733333`（少命中 1 个），
-  MTTC `7.200 -> 7.567`，TechnicalScore `0.747917 -> 0.745112`。
-- 关键证据：IDF 下的 intent_override 在**污染 gazetteer**（E8-C）与**干净
-  gazetteer**（E10）上都是 `0.733333`，完全相同；而无 IDF 的基线在修好污染后
-  从 `0.633333` 升到 `0.766667`。说明 IDF 并非叠加收益，而是在**替代**污染修复：
-  两者纠正的是同一个问题（无区分度的词获得等权重）。槽位干净之后 IDF 无事可做，
-  只是重新施加了它自己的上限。
-- 附带观察：MRR 反而上升 `+0.002652`，而 HitRate 下降。IDF 命中时排得更靠前，
-  但命中次数更少——它把权重推向罕见词，词对时收益、词错时落空。
-- 决定：淘汰。路由机制本身是正确且干净的，问题在于 IDF 对本任务没有增量价值。
-  已回退，`starter/agent.py` 与 E9 逐字节相同。
-- Commit：未提交（仅记录）。
+## 5. Current automated test coverage
 
-## 5. 当前自动测试覆盖
-
-| 测试模块 | Tests | 保护的行为 |
+| Test module | Tests | Behavior protected |
 | --- | ---: | --- |
-| `test_evaluator.py` | 3 | 输出 normalization、miss turn、hidden-field materialization |
-| `test_bm25_diagnostics.py` | 3 | rank、cutoff recall、第一轮测量 |
-| `test_catalog_profile.py` | 1 | 空 collection 的 coverage 语义 |
-| `test_reranker.py` | 2 | 完整约束优先、tie 保持 BM25 顺序 |
-| `test_agent_reranking.py` | 1 | Agent 确实 rerank 更大的候选池 |
-| `test_conversation_state.py` | 6 | 累积、否定、override、非重复提问、策略选择与默认策略 |
-| `test_clarification.py` | 2 | fixed/profile 差异、candidate 的 grounded attribute 选择 |
-| `test_clarification_ablation.py` | 1 | 真实 FTS5 evaluator 上的多策略与切分整合 |
-| `test_experiment_split.py` | 1 | 固定切分大小、分层平衡、dev/validation 不重叠 |
-| `test_experiment_results.py` | 1 | split metrics、scenario metrics 与 TechnicalScore |
-| **总计** | **21** | 当前完整回归套件 |
+| `test_evaluator.py` | 3 | Output normalization, miss turn, hidden-field materialization |
+| `test_bm25_diagnostics.py` | 3 | Rank, cutoff recall, first-turn measurement |
+| `test_catalog_profile.py` | 1 | Coverage meaning for empty collections |
+| `test_reranker.py` | 4 | Complete-constraint priority, BM25 tie order, and optional catalog IDF |
+| `test_agent_reranking.py` | 1 | Agent reranks a larger candidate pool |
+| `test_conversation_state.py` | 14 | Accumulation, negation, slot-aware override, fallback behavior, policy selection and default |
+| `test_clarification.py` | 3 | Fixed/profile difference, candidate grounded-attribute selection, and `other` probe |
+| `test_clarification_ablation.py` | 1 | Multiple policies and splits on the real FTS5 evaluator |
+| `test_experiment_split.py` | 1 | Fixed split size, stratification, and no dev/validation overlap |
+| `test_experiment_results.py` | 1 | Split metrics, scenario metrics, and TechnicalScore |
+| `test_gazetteer.py` | 16 | Vocabulary mining, normalization, coverage, and one-slot precedence |
+| `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
+| **Total** | **53** | Current full regression suite |
 
-运行完整测试：
+Run the full tests:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-运行官方 public evaluator：
+Run the official public evaluator:
 
 ```powershell
 python -m evaluator.local_evaluator
 ```
 
-## 6. 以后如何更新这份文件
+## 6. How to update this ledger
 
-每个新方法都执行以下步骤：
+Follow the full [experiment workflow](EXPERIMENT_WORKFLOW.md). For every method:
 
-1. 分配下一个 ID，例如 `E3`；参数消融使用 `E3-A`、`E3-B`。
-2. 在“方法对比矩阵”追加一行，即使结果失败也不能删除。
-3. 在“各场景矩阵”追加 Buying、Browsing、Intent Override、Boundary。
-4. 在“按时间记录”追加假设、改动、命令、测试数、指标、决定和 commit。
-5. 只保留 aggregate metrics；不要把 private labels 或 credentials 写进文档。
-6. 若方法被淘汰，写明它比哪个保留方法差，以及差多少。
-7. 更新文件顶部的“当前最佳”，但不要覆盖历史结果。
+1. Assign the next ID, such as `E10`; use `E10-A` and `E10-B` for variants.
+2. Add a method-matrix row even when the result fails.
+3. Add Buying, Browsing, Intent Override, and Boundary to the scenario matrix.
+4. Add a chronological entry with the hypothesis, change, commands, test count,
+   metrics, decision, and commit or review branch.
+5. Store only aggregate metrics. Never record private labels or credentials.
+6. For a rejected method, state which retained method beat it and by how much.
+7. Update "Current best" at the top without overwriting historical results.
+8. Update the local Chinese mirror, but never stage or push it.
 
-新实验记录模板：
+New experiment template:
 
 ```markdown
-### T<N>：<实验名称>
+### T<N>: <Experiment name>
 
-- 日期：YYYY-MM-DD
-- 假设：
-- 相对上一保留方法的改变：
-- 新增或修改的测试：
-- 运行命令：
-- Overall：HitRate@10、MRR、MTTC、Efficiency、TechnicalScore
-- Scenario：Buying、Browsing、Intent Override、Boundary
-- 决定：保留 / 淘汰 / 需要更多证据
-- Commit：
-- 限制与下一步：
+- Date: YYYY-MM-DD
+- Hypothesis:
+- Change from the last retained method:
+- New or changed tests:
+- Commands:
+- Overall: HitRate@10, MRR, MTTC, Efficiency, TechnicalScore
+- Scenarios: Buying, Browsing, Intent Override, Boundary
+- Decision: Keep / Reject / Need more evidence
+- Commit or review branch:
+- Limitations and next step:
 ```
 
-## 7. 指标解释与比较规则
+## 7. Metric meanings and comparison rules
 
-- HitRate@10：最多 10 轮内找到目标商品的 session 比例，越高越好。
-- MRR：命中排名倒数的平均值，越高表示目标更靠前。
-- MTTC：首次命中平均轮数；miss 按第 11 轮计算，越低越好。
-- Efficiency：`clip((11 - MTTC) / 10, 0, 1)`。
-- TechnicalScore：`0.50 × HitRate + 0.30 × MRR + 0.20 × Efficiency`。
-- Candidate Recall 与官方 HitRate@10 不可直接比较。
-- Public-set 改善不保证 private-set 改善，因此保留失败实验和 ablation 证据。
+- **HitRate@10:** share of sessions that find the target within ten turns; higher
+  is better.
+- **MRR:** average reciprocal target rank; higher means the target appears nearer
+  the top.
+- **MTTC:** average first-hit turn, with a miss counted as turn 11; lower is better.
+- **Efficiency:** `clip((11 - MTTC) / 10, 0, 1)`.
+- **TechnicalScore:** `0.50 × HitRate + 0.30 × MRR + 0.20 × Efficiency`.
+- Candidate Recall and official HitRate@10 are not directly comparable.
+- Public-set improvement does not guarantee private-set improvement. Keep failed
+  experiments and ablation evidence.
 
-## 8. 证据来源
+## 8. Evidence sources
 
 - [Official baseline JSON](baseline_results.json)
 - [Evaluation configuration](evaluation_config.json)
@@ -432,5 +485,6 @@ python -m evaluator.local_evaluator
 - [Field reranker experiment](../reports/experiments/local-reranker-v1.md)
 - [Conversation state experiment](../reports/experiments/conversation-state-v1.md)
 - [Clarification policy ablation](../reports/experiments/clarification-ablation.md)
+- [Balanced clarification experiment](../reports/experiments/balanced-clarification.md)
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)

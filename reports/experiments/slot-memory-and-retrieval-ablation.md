@@ -141,7 +141,7 @@ the total. This argues for routing rather than a single global setting: the
 agent detects override messages itself, so it can change retrieval behavior
 from that turn onward without reading any label.
 
-**A diagnostic probe (E4) showed clarification is saturated.** Asking `other`
+**A diagnostic probe (E4-B) showed clarification is saturated.** Asking `other`
 every turn scores `0.724052`. Browsing is identical to the tuned policy at
 `0.9625`. Note that the local simulator can never answer `category` or `brand`,
 and answers `other` with two constraints where specific attributes give one.

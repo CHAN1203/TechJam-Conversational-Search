@@ -66,8 +66,8 @@ The generated JSON evidence and interpretation are recorded in
 
 ## Current Best Experiment
 
-The current offline agent combines the deterministic field reranker with
-multi-turn constraint state and candidate-aware clarification. It improves
+The current offline agent combines the deterministic field reranker,
+candidate-aware clarification, and slot-aware intent-override memory. It improves
 public-set HitRate@10 from `0.125` to `0.895` and TechnicalScore from
 `0.106710` to `0.747917`. See the
 [`clarification-ablation` report](reports/experiments/clarification-ablation.md),
@@ -79,6 +79,18 @@ The cumulative [experiment history and comparison matrix](docs/experiment_histor
 records every retained and rejected method, verification run, and future update rule.
 Every evaluator-facing method or ablation must update that matrix, including
 experiments that are rejected or never committed.
+
+## Development Workflow
+
+Before starting another experiment, follow the
+[experiment workflow](docs/EXPERIMENT_WORKFLOW.md). It explains the branch and
+worktree process, development/validation split, testing order, experiment
+matrix updates, and how to preserve rejected implementations for review.
+
+The English documents in `docs/` and `reports/` are the Git-tracked source of
+truth. Optional Chinese translations live only on the local machine under
+`docs/zh-CN/` and `reports/zh-CN/`; Git ignores those folders, so they are not
+included in commits or pushed to GitHub.
 
 ## Agent Interface
 
