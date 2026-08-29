@@ -4,7 +4,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import scripts.run_popularity_sweep as popularity_sweep
 from scripts.run_popularity_sweep import run_popularity_sweep, run_popularity_variants
 
 
@@ -68,15 +70,54 @@ class PopularitySweepTest(unittest.TestCase):
                 "official": self._catalog(directory, "official.jsonl"),
                 "coverage_stress": self._catalog(directory, "stress.jsonl", stress=True),
             }
-            payload = run_popularity_variants(
-                variants, self._samples(), weights=(0.0, 1.2), validation_size=1, seed="fixed"
-            )
+
+            metrics = {
+                "hit_rate_at_10": 0.1,
+                "mrr": 0.2,
+                "mttc": 0.3,
+                "efficiency": 0.4,
+                "recommended_technical_score": 0.5,
+            }
+
+            def summary(stress: bool) -> dict:
+                return {
+                    metric: value + (0.01 if stress else 0.0)
+                    for metric, value in metrics.items()
+                }
+
+            def fake_sweep(catalog_path: str | Path, *args, **kwargs) -> dict:
+                stress = Path(catalog_path).name == "stress.jsonl"
+                row = {
+                    split: summary(stress)
+                    for split in ("full", "development", "validation")
+                }
+                row["difficulty"] = {
+                    bucket: summary(stress) for bucket in ("easy", "hard")
+                }
+                return {
+                    "seed": "fixed",
+                    "validation_size": 1,
+                    "weights": {"0": row, "1.2": row},
+                }
+
+            with patch.object(popularity_sweep, "run_popularity_sweep", side_effect=fake_sweep):
+                payload = run_popularity_variants(
+                    variants, self._samples(), weights=(0.0, 1.2), validation_size=1, seed="fixed"
+                )
 
             self.assertEqual({"official", "coverage_stress"}, set(payload["catalogs"]))
             self.assertEqual("coverage_stress_minus_official", payload["delta_direction"])
-            self.assertIn("1.2", payload["deltas"])
-            self.assertIn("validation", payload["deltas"]["1.2"])
-            self.assertIn("difficulty", payload["deltas"]["1.2"])
+            expected_delta = {metric: 0.01 for metric in metrics}
+            expected_row = {
+                split: expected_delta
+                for split in ("full", "development", "validation")
+            }
+            expected_row["difficulty"] = {
+                bucket: expected_delta for bucket in ("easy", "hard")
+            }
+            self.assertEqual(
+                {"0": expected_row, "1.2": expected_row}, payload["deltas"]
+            )
 
 
 if __name__ == "__main__":
