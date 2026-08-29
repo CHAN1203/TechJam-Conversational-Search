@@ -7,6 +7,7 @@ __pycache__/
 docs/zh-CN/
 reports/zh-CN/
 results.json
+results_*.json
 data/catalog.jsonl
 data/releases/
 # Organizer-only code, private evaluation data, manifests, and build reports.
@@ -20,3 +21,4 @@ docs/participant_release_checklist.md
 tests/test_5core_builder.py
 tests/test_organizer_pipeline.py
 *.log
+venv

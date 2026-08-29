@@ -66,14 +66,15 @@ The generated JSON evidence and interpretation are recorded in
 
 ## Current Best Experiment
 
-The current offline agent combines the deterministic field reranker with
-multi-turn constraint state and candidate-aware clarification. It improves
-public-set HitRate@10 from `0.125` to `0.870` and TechnicalScore from
-`0.106710` to `0.730071`. See the
+The current offline agent combines the deterministic field reranker,
+candidate-aware clarification, and slot-aware intent-override memory. It improves
+public-set HitRate@10 from `0.125` to `0.895` and TechnicalScore from
+`0.106710` to `0.747917`. See the
 [`clarification-ablation` report](reports/experiments/clarification-ablation.md),
 [`conversation-state-v1` report](reports/experiments/conversation-state-v1.md),
-and
-[`local-reranker-v1` report](reports/experiments/local-reranker-v1.md).
+the
+[`local-reranker-v1` report](reports/experiments/local-reranker-v1.md), and the
+[`slot-memory-and-retrieval-ablation` report](reports/experiments/slot-memory-and-retrieval-ablation.md).
 The cumulative [experiment history and comparison matrix](docs/experiment_history.md)
 records every retained and rejected method, verification run, and future update rule.
 Every evaluator-facing method or ablation must update that matrix, including

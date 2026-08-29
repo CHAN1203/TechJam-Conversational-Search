@@ -83,6 +83,13 @@ def select_attribute(
     asked_attributes: Set[str],
     candidates: Sequence[Mapping[str, object]],
 ) -> str | None:
+    if policy == "other":
+        # Diagnostic probe. The local simulator answers "other" with up to two
+        # undisclosed constraints while every specific attribute yields one, so
+        # repeating it measures the ceiling of what clarification can buy. It is
+        # deliberately not a submission strategy: the private simulator policy
+        # is not guaranteed to treat "other" the same way.
+        return "other"
     if policy == "fixed":
         order = DEFAULT_ATTRIBUTE_ORDER
     elif policy == "profile":
