@@ -5,6 +5,7 @@ import re
 import sqlite3
 from pathlib import Path
 
+from starter.clarification import select_attribute
 from starter.reranker import rerank_candidates
 
 
@@ -15,19 +16,6 @@ STOPWORDS = {
     "that", "the", "this", "to", "want", "with", "would", "you", "looking",
 }
 CANDIDATE_POOL_SIZE = 100
-PROFILE_ATTRIBUTE_MAP = {
-    "material": "material",
-    "fit": "size",
-    "comfort": "feature",
-    "durability": "feature",
-    "style": "style",
-    "weather": "use_case",
-    "warmth": "use_case",
-    "color": "color",
-}
-DEFAULT_ATTRIBUTE_ORDER = (
-    "material", "size", "style", "feature", "use_case", "color", "brand", "budget", "other",
-)
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -76,24 +64,19 @@ def _is_intent_override(message: str) -> bool:
     return lowered.startswith("actually") and "ignore my earlier preference" in lowered
 
 
-def _attribute_order(user_profile: dict) -> list[str]:
-    tags = user_profile.get("preference_tags") or []
-    preferred = [
-        PROFILE_ATTRIBUTE_MAP[str(tag).lower()]
-        for tag in tags
-        if str(tag).lower() in PROFILE_ATTRIBUTE_MAP
-    ]
-    return list(dict.fromkeys([*preferred, *DEFAULT_ATTRIBUTE_ORDER]))
-
-
 class Agent:
     """Offline multi-turn retrieval agent with no LLM dependency."""
 
-    def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
+    def __init__(
+        self,
+        catalog_path: str | Path = "data/catalog.jsonl",
+        clarification_policy: str = "candidate",
+    ) -> None:
         self.catalog_path = Path(catalog_path)
+        self.clarification_policy = clarification_policy
         self.connection = sqlite3.connect(":memory:")
         self._session_terms: dict[str, list[str]] = {}
-        self._session_attribute_order: dict[str, list[str]] = {}
+        self._session_profiles: dict[str, dict] = {}
         self._session_asked_attributes: dict[str, set[str]] = {}
         self._build_index()
 
@@ -129,7 +112,7 @@ class Agent:
     def reset(self, session_id: str, user_profile: dict) -> None:
         # The profile is anonymized and may be used for personalization.
         self._session_terms[session_id] = []
-        self._session_attribute_order[session_id] = _attribute_order(user_profile)
+        self._session_profiles[session_id] = user_profile
         self._session_asked_attributes[session_id] = set()
 
     def respond(
@@ -147,6 +130,7 @@ class Agent:
         self._session_terms[session_id] = unique_terms
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
         if not expression:
+            candidates: list[dict] = []
             recommendations: list[dict] = []
         else:
             rows = self.connection.execute(
@@ -172,9 +156,11 @@ class Agent:
                 for parent_asin in rerank_candidates(unique_terms, candidates, top_k)
             ]
         asked = self._session_asked_attributes[session_id]
-        ask_attribute = next(
-            (attribute for attribute in self._session_attribute_order[session_id] if attribute not in asked),
-            None,
+        ask_attribute = select_attribute(
+            self.clarification_policy,
+            self._session_profiles[session_id],
+            asked,
+            candidates,
         )
         if ask_attribute is not None:
             asked.add(ask_attribute)

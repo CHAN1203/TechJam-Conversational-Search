@@ -15,13 +15,21 @@ class ConversationStateTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def build_agent(self, products: list[dict], profile: dict | None = None) -> Agent:
+    def build_agent(
+        self,
+        products: list[dict],
+        profile: dict | None = None,
+        clarification_policy: str | None = None,
+    ) -> Agent:
         catalog_path = Path(self.temporary_directory.name) / "catalog.jsonl"
         catalog_path.write_text(
             "".join(json.dumps(product) + "\n" for product in products),
             encoding="utf-8",
         )
-        agent = Agent(catalog_path)
+        if clarification_policy is None:
+            agent = Agent(catalog_path)
+        else:
+            agent = Agent(catalog_path, clarification_policy=clarification_policy)
         agent.reset("session", profile or {})
         return agent
 
@@ -142,6 +150,7 @@ class ConversationStateTest(unittest.TestCase):
                 "description": [],
             }],
             profile={"preference_tags": ["material", "fit"]},
+            clarification_policy="profile",
         )
 
         first = agent.respond("session", "I want a shirt", 1, 1)
@@ -154,6 +163,54 @@ class ConversationStateTest(unittest.TestCase):
 
         self.assertEqual("material", first["ask_attribute"])
         self.assertEqual("size", second["ask_attribute"])
+
+    def test_agent_uses_selected_clarification_policy(self) -> None:
+        agent = self.build_agent(
+            [{
+                "parent_asin": "SHIRT",
+                "title": "Everyday Shirt",
+                "categories": ["Shirts"],
+                "features": ["Comfortable"],
+                "details": {},
+                "store": "Example",
+                "description": [],
+            }],
+            profile={"preference_tags": ["style"]},
+            clarification_policy="fixed",
+        )
+
+        response = agent.respond("session", "I want a shirt", 1, 1)
+
+        self.assertEqual("material", response["ask_attribute"])
+
+    def test_default_policy_uses_candidate_variation(self) -> None:
+        agent = self.build_agent(
+            [
+                {
+                    "parent_asin": "RED-SHIRT",
+                    "title": "Red Cotton Shirt",
+                    "categories": ["Shirts"],
+                    "features": ["Cotton"],
+                    "details": {},
+                    "store": "Example",
+                    "description": [],
+                },
+                {
+                    "parent_asin": "BLUE-SHIRT",
+                    "title": "Blue Cotton Shirt",
+                    "categories": ["Shirts"],
+                    "features": ["Cotton"],
+                    "details": {},
+                    "store": "Example",
+                    "description": [],
+                },
+            ],
+            profile={"preference_tags": ["style"]},
+        )
+
+        response = agent.respond("session", "I want a shirt", 1, 1)
+
+        self.assertEqual("color", response["ask_attribute"])
 
 
 if __name__ == "__main__":
