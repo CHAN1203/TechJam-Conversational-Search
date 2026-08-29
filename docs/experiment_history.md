@@ -8,8 +8,8 @@ including failed experiments. It should answer three questions directly:
 2. What changed in each experiment?
 3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E9 Slot Conflict Resolution, with public HitRate@10 `0.895`,
-> MRR `0.549056`, MTTC `4.215`, and TechnicalScore `0.747917`.
+> Current best: E11 Popularity Prior, with public HitRate@10 `0.965`,
+> MRR `0.662125`, MTTC `2.965`, and TechnicalScore `0.841838`.
 
 Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
 recording another method.
@@ -28,7 +28,7 @@ previous retained method.
 | E2 | Conversation State v1 | Accumulate constraints, handle overrides, ask profile-guided non-repeating questions | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | Keep | `d770b6f` |
 | E3-A | Fixed clarification | Use a fixed attribute question order | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | Reject | `fa84de2` |
 | E3-B | Profile clarification | Use the E2 profile-first policy as the ablation baseline | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | Previous baseline | `fa84de2` |
-| E3-C | Candidate-aware clarification | Ask first about a covered, varied attribute in the Top-100 candidates | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | **Current best** | `fa84de2` |
+| E3-C | Candidate-aware clarification | Ask first about a covered, varied attribute in the Top-100 candidates | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | Superseded by E9 | `fa84de2` |
 | E4-A | Balanced clarification | Prioritize the intersection of profile preferences and current product differences | 23 during experiment | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | Reject | Review branch only |
 | E4-B | Always-ask-other probe | Always ask `other`; diagnostic only | 35 | 0.840 | -0.030 | 0.522508 | 3.635 | 0.7365 | 0.724052 | -0.006019 | Reject (diagnostic) | Not separately committed |
 | E5 | Slot-aware override memory | Preserve category/department slots during override; clear the rest | 41 | **0.875** | +0.005 | 0.540300 | **4.290** | 0.6710 | **0.733790** | +0.003719 | Keep (weak evidence) | Included in remote series |
@@ -37,8 +37,9 @@ previous retained method.
 | E8-A | Pool-frequency IDF (incorrect) | Treat candidate-pool term frequency as IDF | 53 | 0.790 | -0.085 | 0.459067 | 4.975 | 0.6025 | 0.653220 | -0.080570 | Reject (reasoning error) | Included in remote series |
 | E8-B | Catalog IDF + pool 500 | Weight with catalog-wide `fts5vocab` document frequency | 54 during experiment | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | Reject | Included in remote series |
 | E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
-| E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | **Current best** | `c1941f6` merge series |
+| E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
+| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | **Current best** | `52789c4` |
 
 The E1-A targeted test completed a red-green cycle. The behavior was then
 removed because the evaluator regressed, so it is not in the final test suite
@@ -65,6 +66,7 @@ or a Git commit. The failed result remains in this matrix.
 | E8-C Catalog IDF + pool 100 | 0.8625 | 0.9000 | **0.733333** | 0.9000 |
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
 | E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
+| E11 Popularity prior | 0.9500 | **1.0000** | **0.933333** | 0.9000 |
 
 This table cannot prove private-set performance. It identifies which scenario
 regressed so that an aggregate improvement does not hide a worse user experience.
@@ -403,6 +405,59 @@ tested a reranker before adding dense retrieval.
   adds no incremental value for this task. Reverted — `starter/agent.py` is now byte-identical to E9.
 - Commit: not committed (record only).
 
+### T15: Popularity prior (current best)
+
+- Date: 2026-08-29
+- Origin: a completely failed Intent Override session. All ten returned products satisfied
+  every disclosed constraint — leather, buckle, belt — so nothing separated them and ties fell
+  back to BM25 order. Target `B071X54486` has 6,614 ratings; eight of the ten returned items
+  had between 10 and 257.
+- Key measurement: the hidden target is a **real purchase record**, and purchased items are
+  reviewed items.
+
+  | | Catalog | Targets |
+  | --- | ---: | ---: |
+  | Median `rating_number` | 12 | **6,846** |
+
+  The median target sits at the **99.5th percentile** of catalog popularity. 193/200 targets
+  fall in the top quartile, 173/200 in the top decile, only 2/200 in the bottom quartile.
+  The field has 100% coverage and was previously unused.
+- Change: the rerank score gains `popularity_weight * log1p(rating_number)`. `rating_number`
+  is collected into a separate dict during index construction rather than added to the FTS5
+  table, so the `bm25()` column weights are untouched. A missing value contributes zero.
+- Degeneracy check: an agent that ignores the conversation entirely and returns the globally
+  most-reviewed products every turn scores HitRate@10 **0.035** (7/200). Retrieval narrows
+  50,000 products to a few hundred; popularity orders that set. The two are complementary,
+  and popularity is not substituting for conversational understanding.
+- Weight sweep on the same seed and 80-session validation split as the clarification ablation,
+  choosing on validation only:
+
+  | Weight | Validation | Development | Full | Boundary |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 0.0 | 0.771539 | 0.732169 | 0.747917 | 0.9000 |
+  | 0.5 | 0.830092 | 0.810395 | 0.818274 | 0.9000 |
+  | 0.8 | 0.837653 | 0.824992 | 0.830057 | 0.9000 |
+  | **1.2** | **0.844722** | **0.839915** | **0.841838** | 0.9000 |
+  | 1.8 | 0.838857 | 0.828661 | 0.832739 | 0.9000 |
+  | 2.5 | 0.821893 | 0.821475 | 0.821642 | 0.9000 |
+  | 8.0 | 0.773765 | 0.777014 | 0.775714 | **0.8000** |
+  | 16.0 | 0.755640 | 0.749870 | 0.752178 | **0.8000** |
+
+  A clean inverted U. Development and validation peak at `1.2` **independently**, and 0.8-1.8
+  is a plateau rather than a spike. At weight >= 8 Boundary drops from `0.9000` to `0.8000`:
+  the failure mode where popularity overwhelms constraint matching is real, but appears only
+  well past the peak.
+- Result: HitRate@10 `0.965`, MRR `0.662125`, MTTC `2.965`, TechnicalScore `0.841838`
+  (E9 was `0.747917`, `+0.093921`).
+- Every scenario improved or held: buying `0.8750 -> 0.9500`, browsing `0.9625 -> 1.0000`,
+  intent_override `0.766667 -> 0.933333`, boundary `0.9000` unchanged but faster.
+- Limitations: the weight is tuned on 200 public sessions; if the private set draws targets
+  with a different popularity profile the optimum moves. `1.2` was chosen because it sits
+  mid-plateau, not because it is the argmax. This is a prior about **how the dataset was
+  constructed**, not personalization, and the report should say so. Boundary is unchanged at
+  `0.9000` across every weight, so those sessions are limited by something else.
+- Commit: `52789c4`. Evidence: [popularity prior](../reports/experiments/popularity-prior.md).
+
 ## 5. Current automated test coverage
 
 | Test module | Tests | Behavior protected |
@@ -487,4 +542,5 @@ New experiment template:
 - [Clarification policy ablation](../reports/experiments/clarification-ablation.md)
 - [Balanced clarification experiment](../reports/experiments/balanced-clarification.md)
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
+- [Popularity prior](../reports/experiments/popularity-prior.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)

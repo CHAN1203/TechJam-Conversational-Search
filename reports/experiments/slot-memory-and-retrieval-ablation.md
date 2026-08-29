@@ -1,7 +1,9 @@
 # Slot Memory and Retrieval Ablation
 
 Date: 2026-08-29
-Status: E9 is the current best. E5 kept with weak evidence; E6, E7, E8-A/B/C rejected.
+Status: superseded by E11 (popularity prior, TechnicalScore `0.841838`).
+E9 remains the retrieval and memory baseline that E11 builds on.
+E5 kept with weak evidence; E6, E7, E8-A/B/C rejected.
 
 ## Summary
 
