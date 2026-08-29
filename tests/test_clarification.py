@@ -26,6 +26,42 @@ class ClarificationPolicyTest(unittest.TestCase):
 
         self.assertEqual("color", selected)
 
+    def test_balanced_policy_prefers_a_profile_attribute_that_varies(self) -> None:
+        candidates = [
+            {"title": "Red Casual Shirt", "features": "Cotton"},
+            {"title": "Blue Formal Shirt", "features": "Cotton"},
+        ]
+
+        try:
+            selected = select_attribute(
+                "balanced",
+                {"preference_tags": ["style"]},
+                set(),
+                candidates,
+            )
+        except ValueError:
+            selected = None
+
+        self.assertEqual("style", selected)
+
+    def test_balanced_policy_skips_a_profile_attribute_that_does_not_vary(self) -> None:
+        candidates = [
+            {"title": "Red Shirt", "features": "Cotton"},
+            {"title": "Blue Shirt", "features": "Cotton"},
+        ]
+
+        try:
+            selected = select_attribute(
+                "balanced",
+                {"preference_tags": ["material"]},
+                set(),
+                candidates,
+            )
+        except ValueError:
+            selected = None
+
+        self.assertEqual("color", selected)
+
 
 if __name__ == "__main__":
     unittest.main()

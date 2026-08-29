@@ -39,23 +39,27 @@ CANDIDATE_ATTRIBUTE_ORDER = ("material", "color", "size", "style", "use_case", "
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 
 
-def _profile_order(user_profile: Mapping[str, object]) -> list[str]:
+def _profile_attributes(user_profile: Mapping[str, object]) -> list[str]:
     tags = user_profile.get("preference_tags") or []
     preferred = [
         PROFILE_ATTRIBUTE_MAP[str(tag).lower()]
         for tag in tags
         if str(tag).lower() in PROFILE_ATTRIBUTE_MAP
     ]
-    return list(dict.fromkeys([*preferred, *DEFAULT_ATTRIBUTE_ORDER]))
+    return list(dict.fromkeys(preferred))
+
+
+def _profile_order(user_profile: Mapping[str, object]) -> list[str]:
+    return list(dict.fromkeys([*_profile_attributes(user_profile), *DEFAULT_ATTRIBUTE_ORDER]))
 
 
 def _candidate_text(candidate: Mapping[str, object]) -> str:
     return " ".join(str(value) for value in candidate.values()).lower()
 
 
-def _candidate_order(candidates: Sequence[Mapping[str, object]]) -> list[str]:
+def _grounded_candidate_order(candidates: Sequence[Mapping[str, object]]) -> list[str]:
     if not candidates:
-        return list(DEFAULT_ATTRIBUTE_ORDER)
+        return []
     candidate_tokens = [set(TOKEN_RE.findall(_candidate_text(candidate))) for candidate in candidates]
     scores: list[tuple[float, int, str]] = []
     for priority, attribute in enumerate(CANDIDATE_ATTRIBUTE_ORDER):
@@ -73,8 +77,24 @@ def _candidate_order(candidates: Sequence[Mapping[str, object]]) -> list[str]:
         diversity = (len(observed) - 1) / len(observed)
         scores.append((coverage * diversity, priority, attribute))
     scores.sort(key=lambda item: (-item[0], item[1]))
-    grounded = [attribute for _, _, attribute in scores]
+    return [attribute for _, _, attribute in scores]
+
+
+def _candidate_order(candidates: Sequence[Mapping[str, object]]) -> list[str]:
+    grounded = _grounded_candidate_order(candidates)
     return list(dict.fromkeys([*grounded, *DEFAULT_ATTRIBUTE_ORDER]))
+
+
+def _balanced_order(
+    user_profile: Mapping[str, object],
+    candidates: Sequence[Mapping[str, object]],
+) -> list[str]:
+    grounded = _grounded_candidate_order(candidates)
+    preferred = [
+        attribute for attribute in _profile_attributes(user_profile)
+        if attribute in grounded
+    ]
+    return list(dict.fromkeys([*preferred, *grounded, *DEFAULT_ATTRIBUTE_ORDER]))
 
 
 def select_attribute(
@@ -89,6 +109,8 @@ def select_attribute(
         order = _profile_order(user_profile)
     elif policy == "candidate":
         order = _candidate_order(candidates)
+    elif policy == "balanced":
+        order = _balanced_order(user_profile, candidates)
     else:
         raise ValueError(f"unsupported clarification policy: {policy}")
     return next((attribute for attribute in order if attribute not in asked_attributes), None)
