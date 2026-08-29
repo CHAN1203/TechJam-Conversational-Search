@@ -52,12 +52,12 @@ consecutive builds.
 
 ## Scenario result
 
-| Scenario | Official HitRate / MRR / MTTC | Stress HitRate / MRR / MTTC |
-| --- | --- | --- |
-| Buying (80) | 0.9500 / 0.696905 / 2.2875 | 0.9500 / 0.714940 / 2.2750 |
-| Browsing (80) | 1.0000 / 0.665595 / 2.8250 | 1.0000 / 0.688408 / 2.7625 |
-| Intent Override (30) | 0.933333 / 0.587685 / 4.933333 | 0.933333 / 0.601852 / 4.933333 |
-| Boundary (10) | 0.9000 / 0.579444 / 3.6000 | 0.9000 / 0.613333 / 3.2000 |
+| Scenario | Official HitRate / MRR / MTTC | Stress HitRate / MRR / MTTC | Stress minus official HitRate | Stress minus official MRR | Stress minus official MTTC |
+| --- | --- | --- | ---: | ---: | ---: |
+| Buying (80) | 0.9500 / 0.696905 / 2.2875 | 0.9500 / 0.714940 / 2.2750 | +0.000000 | +0.018035 | -0.0125 |
+| Browsing (80) | 1.0000 / 0.665595 / 2.8250 | 1.0000 / 0.688408 / 2.7625 | +0.000000 | +0.022813 | -0.0625 |
+| Intent Override (30) | 0.933333 / 0.587685 / 4.933333 | 0.933333 / 0.601852 / 4.933333 | +0.000000 | +0.014167 | +0.0000 |
+| Boundary (10) | 0.9000 / 0.579444 / 3.6000 | 0.9000 / 0.613333 / 3.2000 | +0.000000 | +0.033889 | -0.4000 |
 
 The candidate clarification and `1.2` popularity entry points were also run in
 dual mode. Each produced official, coverage-stress, and stress-minus-official
@@ -93,5 +93,8 @@ git check-ignore -v data/generated/catalog-coverage-stress.jsonl
 python -m scripts.run_dual_catalog_evaluation --output reports\experiments\coverage-stress-baseline.json
 python -m scripts.run_clarification_ablation --policies candidate --output reports\experiments\coverage-stress-candidate.json
 python -m scripts.run_popularity_sweep --weights 1.2 --output reports\experiments\coverage-stress-popularity.json
-python -m scripts.run_dual_catalog_evaluation --catalog-mode official
+python -m scripts.run_dual_catalog_evaluation --catalog-mode official --output results_official_reproduction.json
 ```
+
+`results_official_reproduction.json` is temporary and ignored; do not use the
+tracked dual-baseline filename for an official-only reproduction.

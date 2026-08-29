@@ -139,12 +139,14 @@ python -m scripts.run_popularity_sweep --weights 1.2
 For historical reproduction of official results only, use:
 
 ```powershell
-python -m scripts.run_dual_catalog_evaluation --catalog-mode official
+python -m scripts.run_dual_catalog_evaluation --catalog-mode official --output results_official_reproduction.json
 ```
 
 Official metrics select methods. Stress metrics reveal metadata sensitivity; no
 combined score is valid. The stress catalog is not an official catalog or a
-submission artifact, and it cannot forecast private-evaluation performance.
+submission artifact, and it cannot forecast private-evaluation performance. The
+official-only output above is temporary and ignored, so it cannot overwrite the
+tracked dual baseline.
 
 ## Step 5: Update the evidence
 
