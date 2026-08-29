@@ -8,11 +8,10 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E18 Semantic Reranking Score, with public HitRate@10
-> `0.970`, MRR `0.677607`, MTTC `2.920`, and TechnicalScore `0.849882`.
-> Zero sessions change hit/miss status versus E13 -- the gain is purely a
-> ranking-quality improvement (9 sessions rank higher, 4 rank slightly
-> lower, among the same 194 already-correct sessions).
+> Current best: E19 Phrase (Bigram) Bonus, with public HitRate@10 `0.980`,
+> MRR `0.715919`, MTTC `2.815`, and TechnicalScore `0.868476`. The largest
+> single-experiment gain since E13: 2 sessions recovered, 0 lost, versus
+> E18.
 >
 > E15 was reverted after review: its result is not an improvement on any
 > measurable metric (0/200 public sessions differ from E13). Its only
@@ -59,7 +58,8 @@
 | E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
 | E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Local, not pushed |
 | E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Local, not pushed |
-| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | **Current best (0/200 sessions flip)** | Local, not pushed |
+| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | Local, not pushed |
+| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | **Current best** | Local, not pushed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -94,6 +94,7 @@
 | E16 Dense retrieval (standalone) | 0.6750 | 0.6750 | 0.633333 | 0.6000 |
 | E17 RRF hybrid retrieval | 0.9375 | 0.9750 | 0.900000 | 0.9000 |
 | E18 Semantic reranking score | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
+| E19 Phrase (bigram) bonus | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -902,6 +903,55 @@
   `popularity-prior.md`) could find a better weight than this 3-point
   triangulation did. Evidence:
   [semantic reranking](../reports/experiments/semantic-reranking.md).
+
+### T23: Phrase (bigram) bonus (current best)
+
+- Date: 2026-08-30
+- Origin: researched separately -- `TechJam.docx`'s remaining Layer 1/2
+  options are now all tried (E16/E17/E18). Classic, well-established IR
+  technique: E1's field-weighted reranker scores every query word
+  independently, so "running" and "shoe" scattered apart in a document
+  score identically to "running shoe" as an adjacent phrase.
+- Hypothesis: rewarding candidates whose text contains the customer's
+  adjacent word-pairs as a literal substring should improve precision.
+  Unlike E16/E17, this only adds a scoring term over the unchanged BM25
+  pool (same lower-risk shape as E18).
+- Change: new `starter/reranker.py::extract_bigrams` and
+  `phrase_terms`/`phrase_weight` on `rerank_candidates`. `starter/agent.py`
+  computes bigrams from the current turn's raw message each turn.
+- **Bug found and fixed, unrelated to this experiment's own logic:**
+  `scripts/run_retrieval_mode.py`'s `--semantic-weight` had a hardcoded
+  default of `0.0`, silently overriding `Agent`'s real default (`1.0`
+  since E18) whenever invoked without that flag -- stale since E18 changed
+  the default and the script wasn't updated. Fixed by defaulting both
+  `--semantic-weight` and the new `--phrase-weight` to `None`, meaning
+  "use `Agent`'s own default," so this class of staleness can't recur.
+- New tests: 10 (`ExtractBigramsTest`, `PhraseBonusTest`). 115/115 project
+  tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --phrase-weight 1.0 --output reports/experiments/phrase-bonus.json
+  python -m evaluator.local_evaluator   # confirms the plain default matches
+  ```
+
+- Triangulated three weights on top of E18's `semantic_weight=1.0`: `0.5`
+  -> TechnicalScore `0.855221`; `1.0` -> `0.868476` (best); `2.0` ->
+  `0.866975` (past the peak). Chose `1.0`.
+- Result: HitRate@10 `0.970 -> 0.980`, MRR `0.677607 -> 0.715919`, MTTC
+  `2.920 -> 2.815`, TechnicalScore `0.849882 -> 0.868476` (`+0.018594`) --
+  the largest single-experiment gain since E13. **2 sessions recovered**
+  (`public_0161`, `public_0179`), **0 lost**.
+- Decision: **Keep. New current best.** `PHRASE_WEIGHT = 1.0` is now the
+  `Agent` default, confirmed with the plain, unmodified `Agent()`
+  construction. The size of this gain suggests bag-of-words scoring really
+  was leaving precision on the table for phrase-shaped constraints, not a
+  dataset-specific quirk.
+- Commit/branch: local commit on `experiment/phrase-bonus`, not pushed.
+- Limitations and next step: a full validation-split sweep could find a
+  better weight than this 3-point triangulation. Evidence:
+  [phrase bonus](../reports/experiments/phrase-bonus.md).
 
   ## 5. Current automated test coverage
 

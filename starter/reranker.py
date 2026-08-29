@@ -28,6 +28,23 @@ def _popularity(candidate: Mapping[str, object]) -> float:
     return math.log1p(max(count, 0.0))
 
 
+def extract_bigrams(text: str) -> list[str]:
+    """Consecutive word pairs, lowercased, from one piece of text -- a
+    phrase relationship is a property of adjacency within a single
+    utterance, not something to accumulate across turns."""
+    tokens = TOKEN_RE.findall(text.lower())
+    return [f"{a} {b}" for a, b in zip(tokens, tokens[1:])]
+
+
+def _combined_field_text(candidate: Mapping[str, object]) -> str:
+    return " ".join(str(candidate.get(field, "")) for field in FIELD_WEIGHTS).lower()
+
+
+def _phrase_match_count(phrase_terms: Sequence[str], candidate: Mapping[str, object]) -> int:
+    combined = _combined_field_text(candidate)
+    return sum(1 for phrase in phrase_terms if phrase in combined)
+
+
 def _best_weight_by_term(query_terms: Sequence[str], candidate: Mapping[str, object]) -> dict[str, float]:
     best_weight_by_term = {term: 0.0 for term in query_terms}
     for field, weight in FIELD_WEIGHTS.items():
@@ -59,6 +76,8 @@ def rerank_candidates(
     completeness_bonus: float = 0.0,
     semantic_scores: Mapping[str, float] | None = None,
     semantic_weight: float = 0.0,
+    phrase_terms: Sequence[str] | None = None,
+    phrase_weight: float = 0.0,
 ) -> list[str]:
     """Order candidates by field-weighted term matches.
 
@@ -88,15 +107,23 @@ def rerank_candidates(
     added as `semantic_weight * semantic_scores[parent_asin]`. A candidate
     absent from the mapping contributes zero, not an error -- the semantic
     signal is a bonus on top of lexical scoring, never a requirement.
+
+    `phrase_terms` (with `phrase_weight`) rewards a candidate whose text
+    contains the customer's adjacent word-pairs as a literal substring, not
+    just the same words scattered independently -- "running shoe" as a
+    phrase is more specific than a document matching "running" and "shoe"
+    in unrelated places.
     """
     required = set(required_terms or ())
     semantic_scores = semantic_scores or {}
+    phrase_terms = phrase_terms or ()
     scored = []
     for rank, candidate in enumerate(candidates):
         parent_asin = str(candidate["parent_asin"])
         best_weight_by_term = _best_weight_by_term(query_terms, candidate)
         score = _match_score(best_weight_by_term, idf) + popularity_weight * _popularity(candidate)
         score += semantic_weight * semantic_scores.get(parent_asin, 0.0)
+        score += phrase_weight * _phrase_match_count(phrase_terms, candidate)
         if required and all(best_weight_by_term.get(term, 0.0) > 0.0 for term in required):
             score += completeness_bonus
         scored.append((score, rank, parent_asin))

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from starter.reranker import rerank_candidates
+from starter.reranker import rerank_candidates, extract_bigrams
 
 
 class RerankerTest(unittest.TestCase):
@@ -213,3 +213,51 @@ class CompletenessBonusTest(unittest.TestCase):
             rerank_candidates(["leather", "belt"], candidates, 2, completeness_bonus=4.0),
             ["B", "A"],
         )
+
+
+class ExtractBigramsTest(unittest.TestCase):
+    def test_extracts_consecutive_word_pairs(self) -> None:
+        self.assertEqual(
+            extract_bigrams("Running shoe for men"),
+            ["running shoe", "shoe for", "for men"],
+        )
+
+    def test_single_word_has_no_bigrams(self) -> None:
+        self.assertEqual(extract_bigrams("shoe"), [])
+
+    def test_empty_text_has_no_bigrams(self) -> None:
+        self.assertEqual(extract_bigrams(""), [])
+
+
+class PhraseBonusTest(unittest.TestCase):
+    def test_exact_phrase_match_outranks_the_same_words_apart(self) -> None:
+        candidates = [
+            {"parent_asin": "APART", "title": "Running errands in a dress shoe"},
+            {"parent_asin": "PHRASE", "title": "Comfortable running shoe for men"},
+        ]
+        ranked = rerank_candidates(
+            ["running", "shoe"],
+            candidates,
+            2,
+            phrase_terms=["running shoe"],
+            phrase_weight=3.0,
+        )
+        self.assertEqual(["PHRASE", "APART"], ranked)
+
+    def test_omitting_phrase_terms_leaves_ranking_unchanged(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "running errands dress shoe"},
+            {"parent_asin": "B", "title": "running shoe"},
+        ]
+        without_phrase = rerank_candidates(["running", "shoe"], candidates, 2)
+        with_zero_weight = rerank_candidates(
+            ["running", "shoe"], candidates, 2, phrase_terms=["running shoe"], phrase_weight=0.0
+        )
+        self.assertEqual(without_phrase, with_zero_weight)
+
+    def test_single_word_message_contributes_no_phrase_bonus_without_crashing(self) -> None:
+        candidates = [{"parent_asin": "A", "title": "shoe"}]
+        ranked = rerank_candidates(
+            ["shoe"], candidates, 1, phrase_terms=extract_bigrams("shoe"), phrase_weight=3.0
+        )
+        self.assertEqual(["A"], ranked)

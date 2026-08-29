@@ -9,7 +9,7 @@ from pathlib import Path
 from starter.clarification import select_attribute
 from starter.dense import DenseIndex
 from starter.slots import extract_slots
-from starter.reranker import rerank_candidates
+from starter.reranker import extract_bigrams, rerank_candidates
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
@@ -35,6 +35,10 @@ POPULARITY_WEIGHT = 1.2
 # 1.0 improved TechnicalScore with zero sessions flipping hit/miss; 2.0
 # regressed. A fuller sweep is a reasonable next step, not done here.
 SEMANTIC_WEIGHT = 1.0
+# Triangulated (0.5, 1.0, 2.0), not a full validation-split sweep -- see
+# reports/experiments/phrase-bonus.md. 1.0 was the peak: TechnicalScore
+# 0.849882 -> 0.868476, 2 sessions recovered, 0 lost.
+PHRASE_WEIGHT = 1.0
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -131,7 +135,9 @@ class Agent:
         popularity_weight: float = POPULARITY_WEIGHT,
         retrieval_mode: str = "bm25",
         semantic_weight: float = SEMANTIC_WEIGHT,
+        phrase_weight: float = PHRASE_WEIGHT,
     ) -> None:
+        self.phrase_weight = phrase_weight
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.popularity_weight = popularity_weight
@@ -350,6 +356,8 @@ class Agent:
                     completeness_bonus=COMPLETENESS_BONUS,
                     semantic_scores=semantic_scores,
                     semantic_weight=self.semantic_weight,
+                    phrase_terms=extract_bigrams(user_message),
+                    phrase_weight=self.phrase_weight,
                 )
             ]
         asked = self._session_asked_attributes[session_id]
