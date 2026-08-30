@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
+
+import starter.agent
 
 from starter.agent import Agent
 from starter.ledger import (
@@ -377,6 +380,45 @@ class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
 
         ranked = [item["parent_asin"] for item in response["recommendations"]]
         self.assertEqual("STRONG-SHOWN", ranked[0])
+
+    def test_the_current_turn_is_not_penalised_by_its_own_recommendations(self) -> None:
+        """Scoring happens before the turn's own output is recorded as shown.
+
+        This ordering is what makes the mechanism safe. In Buying, Browsing and
+        Boundary the evaluator ends the session the moment the target enters
+        the Top-10, so "the target has been shown" and "the session is still
+        running" cannot both hold. Because a turn's own recommendations are
+        counted only after that turn has been scored, the target's shown count
+        is provably zero at every scoring call, and it can never be penalised.
+        Reversing these two statements would silently break that guarantee.
+        """
+        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent.respond("session", "I don't have a preference for anything.", 1, 2)
+
+        # The first turn is stuck by construction here, yet nothing had been
+        # shown before it, so no candidate carries a penalty.
+        self.assertIsNone(agent._shown_penalty("session"))
+
+    def test_a_product_is_penalised_only_from_the_turn_after_it_was_shown(self) -> None:
+        # The penalty must be read at the moment of scoring, not afterwards:
+        # by the time respond() returns, the turn's own output has been counted.
+        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        seen: list[dict[str, float] | None] = []
+        real = starter.agent.rerank_candidates
+
+        def spy(*args, **kwargs):
+            seen.append(kwargs.get("shown_penalty"))
+            return real(*args, **kwargs)
+
+        with patch.object(starter.agent, "rerank_candidates", spy):
+            agent.respond("session", "I want a leather belt buckle", 1, 2)
+            agent.respond(
+                "session", "I don't have an additional preference for color.", 2, 2
+            )
+
+        self.assertIsNone(seen[0])
+        self.assertEqual(1.0, seen[1]["STRONG-SHOWN"])
+        self.assertEqual(2, agent._session_shown["session"]["STRONG-SHOWN"])
 
     def test_a_stuck_agent_keeps_asking_instead_of_repeating_other(self) -> None:
         # "other" being a strict superset of every named attribute is a property

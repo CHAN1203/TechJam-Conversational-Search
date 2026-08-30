@@ -767,11 +767,19 @@
   -- so the evidence is weaker than the popularity prior's.
 - Decision: keep at `rejection_weight = 1.0`. Constructor defaults unchanged;
   an unflagged `Agent()` still reproduces E11 at `0.841838`.
-- Limitations: three recovered sessions out of 80 Buying. In Intent Override a
-  pre-override hit does not end the session, so a target shown early could in
-  principle be penalised later; it did not happen at this weight on the public
-  set, which is a measurement and not a guarantee. `public_0020` remains
-  unreachable at pool position 187.
+- Safety of the penalty: the target is never penalised on the turn it is
+  found, across 199 hits with no exception. For Buying, Browsing and Boundary
+  this is a guarantee, not an observation: a turn's own recommendations are
+  recorded as shown only after that turn has been scored, and the evaluator
+  ends the session the moment the target enters the Top-10, so the target's
+  shown count is provably zero at every scoring call. Intent Override is the
+  exception, because a pre-override hit does not end the session; 27 of 30
+  targets are shown pre-override and 13 of 30 carry a penalty at some call, up
+  to `2.0`. None is penalised when found, because the override message brings a
+  constraint that resets the counter. That part is empirical, 30 of 30, and a
+  differently timed private override could break it.
+- Limitations: three recovered sessions out of 80 Buying. `public_0020` remains
+  unreachable at pool position 187. The penalty counts showings, not positions.
 - Evidence: [implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md).
 
   ## 5. Current automated test coverage

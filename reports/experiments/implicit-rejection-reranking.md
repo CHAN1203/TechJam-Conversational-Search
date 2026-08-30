@@ -125,10 +125,23 @@ E11 at `0.841838`. Automated tests: 127 before, 133 after.
 ## Limitations
 
 - Three recovered sessions. The Buying gain rests on three of 80.
-- Intent Override is unaffected here, but the mechanism carries a specific risk
-  in that scenario: a hit before the override turn does not end the session, so
-  a target shown early could in principle be penalised later. It did not happen
-  on the public set at this weight, and that is a measurement, not a guarantee.
+- The target is never penalised on the turn it is found: 199 hits, zero
+  exceptions. For Buying, Browsing and Boundary this is a guarantee rather than
+  an observation. A turn's own recommendations are recorded as shown only
+  *after* that turn has been scored, and the evaluator ends the session the
+  moment the target enters the Top-10, so "the target has been shown" and "the
+  session is still running" cannot both hold; the target's shown count is
+  therefore zero at every scoring call. `test_the_current_turn_is_not_penalised_by_its_own_recommendations`
+  locks the ordering that this depends on.
+- Intent Override is the one scenario where the guarantee does not follow. A
+  hit before the override turn does not end the session, so the target can
+  accumulate a penalty: 27 of 30 targets are shown pre-override and 13 of 30
+  carry a non-zero penalty at some scoring call, up to `2.0` at the retained
+  weight. None of them is penalised on the turn it is found, because the
+  override message itself carries a new constraint, which resets the
+  information-gain counter and lifts the penalty for that turn. That is an
+  empirical observation holding 30 of 30, not a theorem, and a differently
+  timed private override could break it.
 - The penalty counts showings, not positions. An item shown once at rank 10 is
   penalised exactly as much as one shown once at rank 1.
 - `public_0020` remains unreachable. Its target carries a single review against
