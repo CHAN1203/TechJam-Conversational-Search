@@ -21,6 +21,8 @@ def run_popularity_sweep(
     weights: tuple[float, ...] = DEFAULT_WEIGHTS,
     validation_size: int = 80,
     seed: str = DEFAULT_SEED,
+    price_weight: float = 0.0,
+    rating_weight: float = 0.0,
 ) -> dict:
     development, validation = stratified_split(samples, validation_size, seed)
     development_ids = {str(s["sample_id"]) for s in development}
@@ -36,7 +38,12 @@ def run_popularity_sweep(
     results: dict[str, dict] = {}
     for weight in weights:
         sessions = evaluate(
-            Agent(catalog_path, popularity_weight=weight),
+            Agent(
+                catalog_path,
+                popularity_weight=weight,
+                price_weight=price_weight,
+                rating_weight=rating_weight,
+            ),
             samples, catalog_ids, categories, products,
         )["sessions"]
         results[f"{weight:g}"] = {
@@ -55,7 +62,13 @@ def run_popularity_sweep(
             },
         }
 
-    return {"seed": seed, "validation_size": validation_size, "weights": results}
+    return {
+        "seed": seed,
+        "validation_size": validation_size,
+        "price_weight": price_weight,
+        "rating_weight": rating_weight,
+        "weights": results,
+    }
 
 
 def run_popularity_variants(
@@ -64,9 +77,19 @@ def run_popularity_variants(
     weights: tuple[float, ...] = DEFAULT_WEIGHTS,
     validation_size: int = 80,
     seed: str = DEFAULT_SEED,
+    price_weight: float = 0.0,
+    rating_weight: float = 0.0,
 ) -> dict:
     results = {
-        name: run_popularity_sweep(path, samples, weights, validation_size, seed)
+        name: run_popularity_sweep(
+            path,
+            samples,
+            weights,
+            validation_size,
+            seed,
+            price_weight=price_weight,
+            rating_weight=rating_weight,
+        )
         for name, path in variants.items()
     }
     if set(results) != {"official", "coverage_stress"}:
@@ -113,6 +136,8 @@ def main() -> None:
     parser.add_argument("--validation-size", type=int, default=80)
     parser.add_argument("--seed", default=DEFAULT_SEED)
     parser.add_argument("--weights", nargs="+", type=float, default=list(DEFAULT_WEIGHTS))
+    parser.add_argument("--price-weight", type=float, default=0.0)
+    parser.add_argument("--rating-weight", type=float, default=0.0)
     add_catalog_variant_arguments(parser)
     args = parser.parse_args()
 
@@ -131,6 +156,8 @@ def main() -> None:
         weights=tuple(args.weights),
         validation_size=args.validation_size,
         seed=args.seed,
+        price_weight=args.price_weight,
+        rating_weight=args.rating_weight,
     )
     for weight_key, row in (
         result["weights"].items()
@@ -141,7 +168,8 @@ def main() -> None:
             f"{bucket}={row['difficulty'][bucket]['hit_rate_at_10']:.4f}"
             for bucket in row["difficulty"]
         )
-        print(f"weight={weight_key:<5} validation={row['validation']['recommended_technical_score']:.6f} "
+        print(f"pop={weight_key:<5} price={args.price_weight:<4g} rating={args.rating_weight:<4g} "
+              f"validation={row['validation']['recommended_technical_score']:.6f} "
               f"full={row['full']['recommended_technical_score']:.6f}  {by_difficulty}", flush=True)
 
     out = Path(args.output)
