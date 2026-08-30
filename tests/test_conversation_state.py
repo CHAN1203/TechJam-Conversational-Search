@@ -8,7 +8,9 @@ from pathlib import Path
 from starter.agent import Agent
 
 
-class ConversationStateTest(unittest.TestCase):
+class AgentFixture:
+    """Catalog, gazetteer, and Agent construction shared by the state tests."""
+
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
 
@@ -40,6 +42,9 @@ class ConversationStateTest(unittest.TestCase):
             )
         agent.reset("session", profile or {})
         return agent
+
+
+class ConversationStateTest(AgentFixture, unittest.TestCase):
 
     def test_respond_accumulates_constraints_across_turns(self) -> None:
         agent = self.build_agent([
@@ -232,6 +237,43 @@ class ConversationStateTest(unittest.TestCase):
         response = agent.respond("session", "I want a shirt", 1, 1)
 
         self.assertEqual("color", response["ask_attribute"])
+
+
+
+class OverrideStatePreservationTest(AgentFixture, unittest.TestCase):
+    """Stage 0 of the constraint-ledger experiment: the one retained fix.
+
+    Surface-form preservation and conversational stopwords were measured and
+    rejected; see reports/experiments/constraint-ledger-stage0.md. Only the
+    no-preference guard over slot memory is retained, on correctness grounds,
+    because it is exactly score-neutral.
+    """
+
+    BELT_CATALOG = [
+        {
+            "parent_asin": "LEATHER-BELT",
+            "title": "Leather Belt",
+            "categories": ["Accessories", "Belts"],
+            "features": ["Buckle closure"],
+            "details": {"material": "leather"},
+            "store": "Example",
+            "description": [],
+        },
+    ]
+
+    def test_a_no_preference_reply_does_not_write_to_slot_memory(self) -> None:
+        # The guard already keeps these replies out of the query terms, but
+        # extract_slots still runs, so the attribute name in "use_case" is
+        # filed as a category and then protected by DURABLE_SLOTS.
+        agent = self.build_agent(self.BELT_CATALOG, gazetteer={"category": {"case": 5}})
+        agent.respond("session", "I'm looking for a belt", 1, 5)
+        before = {slot: dict(terms) for slot, terms in agent._session_slots["session"].items()}
+
+        agent.respond(
+            "session", "I don't have an additional preference for use_case.", 2, 5
+        )
+
+        self.assertEqual(before, agent._session_slots["session"])
 
 
 if __name__ == "__main__":

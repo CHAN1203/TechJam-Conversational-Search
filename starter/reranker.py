@@ -32,16 +32,19 @@ def _match_score(
     query_terms: Sequence[str],
     candidate: Mapping[str, object],
     idf: Mapping[str, float] | None = None,
+    term_weights: Mapping[str, float] | None = None,
 ) -> float:
     best_weight_by_term = {term: 0.0 for term in query_terms}
     for field, weight in FIELD_WEIGHTS.items():
         tokens = _field_tokens(candidate.get(field, ""))
         for term in best_weight_by_term.keys() & tokens:
             best_weight_by_term[term] = max(best_weight_by_term[term], weight)
-    if idf is None:
+    if idf is None and term_weights is None:
         return sum(best_weight_by_term.values())
     return sum(
-        weight * idf.get(term, 1.0)
+        weight
+        * (1.0 if idf is None else idf.get(term, 1.0))
+        * (1.0 if term_weights is None else term_weights.get(term, 1.0))
         for term, weight in best_weight_by_term.items()
     )
 
@@ -52,6 +55,7 @@ def rerank_candidates(
     top_k: int,
     idf: Mapping[str, float] | None = None,
     popularity_weight: float = 0.0,
+    term_weights: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Order candidates by field-weighted term matches.
 
@@ -66,10 +70,14 @@ def rerank_candidates(
     median target carries 6,846 ratings against a catalog median of 12. The
     weight is kept small enough that a better constraint match still wins, so
     the prior separates candidates that are otherwise tied.
+
+    `term_weights` scales each term independently of `idf`. The constraint
+    ledger supplies it, so a constraint the customer gave in answer to a
+    question can count differently from one they volunteered up front.
     """
     scored = [
         (
-            _match_score(query_terms, candidate, idf)
+            _match_score(query_terms, candidate, idf, term_weights)
             + popularity_weight * _popularity(candidate),
             rank,
             str(candidate["parent_asin"]),
