@@ -17,6 +17,12 @@
 > scenario hit rate: the entire `+0.012194` is rank quality (MRR
 > `+0.040980`), which is what a tie-breaking prior is expected to buy.
 >
+> **E21 carries a documented transfer risk.** Under T25's coverage-stress
+> diagnostic its gain reverses: `+0.012194` on the official catalog,
+> `-0.020274` when target price coverage is cut to the catalog-wide rate.
+> No other retained layer reverses. Official metrics still select methods,
+> so E21 stands, but read T26 before relying on its margin.
+>
 > E19 Phrase (Bigram) Bonus remains the largest single-experiment gain
 > since E13: 2 sessions recovered, 0 lost, versus E18.
 >
@@ -1174,12 +1180,40 @@ sparser metadata. Evidence:
   so the standalone rating numbers are not a guide for enabling it on top
   of price `2.0`.
 - Commit/branch: `fe86b63` on `feat/hs`.
+- **Coverage-stress result: the prior's sign reverses.** Run through T25's
+  diagnostic (2026-08-30). The stress build masks `price` on 136 of 178
+  priced targets, leaving 42, while masking `rating_number` on **zero**
+  (100% catalog coverage), so the popularity prior is untouched and the
+  whole delta is attributable to price.
+
+  | Catalog | E19 (price 0.0) | E21 (price 2.0) | Price prior gain |
+  | --- | ---: | ---: | ---: |
+  | Official | 0.868476 | **0.880670** | **+0.012194** |
+  | Coverage-stress | 0.873848 | 0.853574 | **-0.020274** |
+
+  Validation agrees and is sharper: `+0.011619` official, `-0.027275`
+  stress. This is not a signal that weakens -- a vanishing signal would
+  land near zero. It **inverts**: with only 42 targets priced, the flat
+  `2.0` bonus systematically promotes non-target priced candidates above
+  the 136 targets whose price was stripped. It is also the only
+  measurement in which the price prior moves HitRate@10 at all: `0.980 ->
+  0.965` under stress, **3 sessions lost** (2 Buying, 1 Browsing) that E19
+  finds on the same catalog. Boundary and Intent Override are unchanged.
 - Limitations: the 89%/21% price gap is a property of how the public set
-  was built, and T25's coverage-stress catalog masks price down to 42 of
-  200 targets by design -- E21 is the layer most exposed to that
-  diagnostic, and has not yet been run through it. Evidence:
+  was built, and the two catalogs bracket the unknown private set. If the
+  800 private targets are priced like the public ones (89%), E21 is worth
+  `+0.012194`; if they are priced like the catalog (21%), it costs
+  `-0.020274` -- a downside roughly 1.7x the upside in magnitude. Official
+  metrics still select methods (see T25: stress is a diagnostic and does
+  not replace the official score), so E21 stands as current best, but its
+  margin is conditional on a property of how the public set was built in a
+  way no other retained layer's is. `PRICE_WEIGHT` should not be re-tuned
+  against the stress catalog: T25 warns that diagnostic can be overfit by
+  repeated use, and sweeping against it would convert an independent check
+  into another fitted split. Evidence:
   [price and rating priors](../reports/experiments/price-rating-prior.md),
-  [E21 weight sweep](../reports/experiments/price-prior-e21.json).
+  [E21 weight sweep](../reports/experiments/price-prior-e21.json),
+  [E21 coverage-stress](../reports/experiments/coverage-stress-e21.json).
 
   ## 5. Current automated test coverage
 

@@ -3,7 +3,9 @@
 Date: 2026-08-30 (re-measured on the merged E19 stack the same day)
 Status: **E21, current best.** On the merged stack, TechnicalScore
 `0.868476` -> `0.880670`. Rating prior implemented, swept, and shipped
-disabled at `0.0`.
+disabled at `0.0`. **Under the coverage-stress diagnostic this prior's gain
+reverses to `-0.020274`** -- see "Coverage-stress: the prior's sign
+reverses" below before relying on its margin.
 
 The sweeps in "Weight selection" below were run on the **pre-merge E11
 stack**, before E13-E20 existed locally, and are kept because they are the
@@ -160,13 +162,69 @@ Override `0.933333`, Boundary `0.9000`) and MTTC is `0.005` worse; the whole
 tie-breaking prior stacked under E19: the phrase bonus decides which
 candidates surface, the price prior orders the ones that surface tied.
 
+## Coverage-stress: the prior's sign reverses
+
+The coverage-stress catalog rebuilds the frozen 50,000-row catalog with
+target metadata cut back to catalog-wide prevalence. It removes fields; it
+never fabricates or fills them. For price that means masking 136 of the 178
+priced targets, leaving 42. `rating_number` sits at 100% catalog coverage
+and is masked on **zero** targets, so the popularity prior is untouched and
+every bit of the delta below belongs to the price prior.
+
+| Catalog | E19 (price 0.0) | E21 (price 2.0) | Price prior gain |
+| --- | ---: | ---: | ---: |
+| Official | 0.868476 | **0.880670** | **+0.012194** |
+| Coverage-stress | 0.873848 | 0.853574 | **-0.020274** |
+
+Validation is sharper still: `+0.011619` official against `-0.027275`
+stress.
+
+The prior does not merely stop helping -- a signal that vanished would land
+near zero. It **inverts**. With only 42 targets priced, a flat `2.0` bonus
+on price presence systematically lifts non-target priced candidates above
+the 136 targets whose price was stripped, so the prior is confidently wrong
+rather than uninformative.
+
+This is also the only measurement in which the price prior moves HitRate@10:
+
+| Scenario HitRate@10 | official E19 | official E21 | stress E19 | stress E21 |
+| --- | ---: | ---: | ---: | ---: |
+| Buying | 0.9875 | 0.9875 | 0.9875 | **0.9625** |
+| Browsing | 1.0000 | 1.0000 | 1.0000 | **0.9875** |
+| Intent Override | 0.933333 | 0.933333 | 0.933333 | 0.933333 |
+| Boundary | 0.9000 | 0.9000 | 0.9000 | 0.9000 |
+
+Overall `0.980 -> 0.965`: **3 sessions lost** (2 Buying, 1 Browsing) that
+E19 finds on the identical catalog. On the official catalog the price prior
+never moved a single hit.
+
+Reproduce with the tracked dual-catalog tooling:
+
+    python -m scripts.run_popularity_sweep --weights 1.2 --price-weight 2.0
+
+Raw 2x2: [coverage-stress-e21.json](coverage-stress-e21.json).
+
 ## Limitations
 
-- **E21 has not been run through the coverage-stress diagnostic.** T25's
-  stress catalog masks price down to 42 of 200 targets by construction, so
-  this is the layer most exposed to it. The dual-catalog tooling supports
-  it directly: `python -m scripts.run_popularity_sweep --weights 1.2
-  --price-weight 2.0`.
+- **The two catalogs bracket the unknown private set.** If the 800 private
+  targets are priced like the public ones (89%), this prior is worth
+  `+0.012194`; if they are priced like the catalog at large (21%), it costs
+  `-0.020274`. The downside is roughly 1.7x the upside in magnitude. That
+  is the concrete form of the warning in `experiment_history.md` §3.3 that
+  public target coverage "must not be assumed to hold for the 800 private
+  sessions". Official metrics still select methods and the coverage-stress
+  run is a diagnostic that does not replace the official score, so the
+  prior is retained -- but its margin is conditional on how the public set
+  was built in a way no other retained layer's is.
+- **Do not re-tune `PRICE_WEIGHT` against the stress catalog.** That
+  diagnostic can be overfit by repeated use; sweeping for a weight that
+  survives it converts an independent check into another fitted split.
+  Measuring an already-chosen weight against it once is information,
+  searching it for the best score is not.
+- The stress construction matches marginal field presence only, not field
+  correlations or value distributions, so it is a pessimistic bound rather
+  than a forecast. The private set is no more "the stress catalog" than it
+  is the public one.
 - **Price and rating were never swept jointly.** Both tables above hold the
   other weight at zero, so the shipped combination is the price column, not a
   jointly optimised pair. If the rating prior is ever enabled its weight must

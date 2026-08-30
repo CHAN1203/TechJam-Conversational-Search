@@ -194,6 +194,13 @@ priced against `89.0%` of the targets. Only presence is scored, never the price
 value, and it is a bonus rather than a filter because 11% of targets carry no
 price at all.
 
+This prior is the one layer whose gain **reverses** under the project's
+coverage-stress diagnostic: `+0.012194` on the official catalog against
+`-0.020274` when target price coverage is cut to the catalog-wide rate. It
+is retained because official metrics select methods, but its margin depends
+on a property of how the public set was built. See
+[experiment_history.md](experiment_history.md) T26.
+
 `average_rating` was measured and swept the same way and ships at `0.0`: once
 popularity is controlled for, the target/catalog gap collapses from `0.285` to
 `0.084`, and the two splits disagree about the weight. The code path exists but
