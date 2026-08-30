@@ -1879,6 +1879,16 @@ sparser metadata. Evidence:
   set is empty and `required_terms` is untouched, so an unmarked conversation
   behaves exactly as before. It is not what decided the experiment; the
   mechanism is wrong even when detection is perfect.
+- **Nothing was retained.** All three switches were removed along with the
+  ledger's `strength` field, the marker detection and `hard_surfaces()`;
+  `starter/agent.py` and `starter/ledger.py` are byte-identical to the branch
+  point. Keeping the detection was considered, on the argument that `strength`
+  is data rather than behaviour like `source` -- and rejected on the T3
+  precedent. That precedent is what makes this ledger trustworthy, `source` is
+  a documented part of the ledger's design where `strength` would have been the
+  residue of a failed experiment, and nothing had ever read `hard_surfaces()`.
+  The marker table above is the product; the six lines that implemented it are
+  reconstructible from this entry.
 - What this bounds: semantic scoring is worth `0.001871` and the completeness
   bonus `0.009154`, so those are the ceilings for improving their respective
   inputs, and E20 showed that changing the lexical query costs sessions. In a

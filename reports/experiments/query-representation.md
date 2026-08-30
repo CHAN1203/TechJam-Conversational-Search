@@ -160,6 +160,23 @@ fall back. That property is real and was verified -- it is just not what
 decided the experiment, because the mechanism is wrong even when detection
 works perfectly.
 
+## Nothing was retained
+
+All three switches were removed, along with the ledger's `strength` field, the
+marker detection and `hard_surfaces()`. `starter/agent.py` and
+`starter/ledger.py` are byte-identical to the branch point.
+
+Keeping the detection was considered, on the argument that `strength` is data
+rather than behaviour, like the existing `source` field. It was rejected on the
+T3 precedent -- reject the method, remove the code -- because that precedent is
+what makes this ledger trustworthy, and `source` is a documented part of the
+ledger's design while `strength` would have been the residue of a failed
+experiment with no caller. Nothing had ever read `hard_surfaces()`.
+
+The finding survives regardless: the marker table above is the product, not the
+six lines that implemented it. Anything that later needs a hard/soft
+distinction can reconstruct them from this report.
+
 ## What this bounds
 
 Adding a query-understanding module to this system is bounded above by what the

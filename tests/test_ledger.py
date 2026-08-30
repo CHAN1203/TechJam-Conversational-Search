@@ -6,11 +6,8 @@ from unittest.mock import patch
 import starter.agent
 
 from starter.agent import Agent
-from starter.agent import _stated_strength
 from starter.ledger import (
     ACTIVE,
-    HARD,
-    UNKNOWN,
     ANSWERED,
     REVOKED,
     SUPERSEDED,
@@ -343,50 +340,6 @@ class StuckConversationTest(AgentFixture, unittest.TestCase):
         self.assertEqual("other", asked[0])
         self.assertNotIn("other", asked[1:])
         self.assertEqual(len(asked[1:]), len(set(asked[1:])))
-
-
-class ConstraintStrengthTest(unittest.TestCase):
-    """Recorded, not scored. See T41: two ways of acting on it were measured
-    and rejected, but the signal itself is exact and free to keep."""
-
-    def test_both_evaluator_markers_identify_a_requirement(self) -> None:
-        self.assertEqual(HARD, _stated_strength(
-            "I'm looking for Belts. A key requirement is: leather."))
-        self.assertEqual(HARD, _stated_strength(
-            "Actually, ignore my earlier preference. What I need is: leather."))
-
-    def test_an_unmarked_message_stays_unknown(self) -> None:
-        # A shopper phrasing a requirement their own way is not detected, which
-        # is why nothing downstream may treat UNKNOWN as "soft".
-        self.assertEqual(UNKNOWN, _stated_strength("I really must have leather"))
-        self.assertEqual(UNKNOWN, _stated_strength(
-            "For that, what matters is: Buckle closure."))
-
-    def test_hard_surfaces_reports_only_active_marked_entries(self) -> None:
-        ledger = ConstraintLedger()
-        ledger.record(["leather"], {"leather": "material"}, 1, VOLUNTEERED, HARD)
-        ledger.record(["closure"], {}, 1, VOLUNTEERED)
-
-        self.assertEqual({"leather"}, ledger.hard_surfaces())
-
-    def test_a_revoked_requirement_is_no_longer_hard(self) -> None:
-        ledger = ConstraintLedger()
-        ledger.record(["closure"], {}, 1, VOLUNTEERED, HARD)
-
-        ledger.apply_override({}, DURABLE, OPENING)
-
-        self.assertEqual(set(), ledger.hard_surfaces())
-
-    def test_restating_upgrades_but_a_later_mention_never_downgrades(self) -> None:
-        ledger = ConstraintLedger()
-        ledger.record(["leather"], {}, 1, VOLUNTEERED)
-        self.assertEqual(set(), ledger.hard_surfaces())
-
-        ledger.record(["leather"], {}, 2, ANSWERED, HARD)
-        self.assertEqual({"leather"}, ledger.hard_surfaces())
-
-        ledger.record(["leather"], {}, 3, ANSWERED)
-        self.assertEqual({"leather"}, ledger.hard_surfaces())
 
 
 if __name__ == "__main__":
