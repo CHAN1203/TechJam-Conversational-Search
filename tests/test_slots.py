@@ -7,7 +7,12 @@ from starter.slots import extract_slots
 
 GAZETTEER = {
     "category": {"running shoe": 5, "shoe": 40, "dress": 20},
-    "material": {"leather": 10, "faux leather": 3},
+    "material": {
+        "leather": 10,
+        "faux leather": 3,
+        "polyvinyl chloride": 4,
+        "ethylene vinyl acetate": 2,
+    },
     "color": {"black": 8},
     "department": {"men": 30},
 }
@@ -37,6 +42,40 @@ class ExtractSlotsTest(unittest.TestCase):
 
     def test_ignores_substring_collisions(self) -> None:
         self.assertEqual(extract_slots("blackberry preserves", GAZETTEER), {})
+
+    def test_recognizes_pu_as_the_faux_leather_material(self) -> None:
+        self.assertEqual(
+            extract_slots("looking for a PU bag", GAZETTEER),
+            {"material": ["faux leather"]},
+        )
+
+    def test_pu_leather_resolves_to_faux_leather_not_leather(self) -> None:
+        self.assertEqual(
+            extract_slots("PU leather wallet", GAZETTEER),
+            {"material": ["faux leather"]},
+        )
+
+    def test_pleather_resolves_to_faux_leather(self) -> None:
+        self.assertEqual(
+            extract_slots("a pleather jacket", GAZETTEER),
+            {"material": ["faux leather"]},
+        )
+
+    def test_pvc_resolves_to_polyvinyl_chloride_not_faux_leather(self) -> None:
+        self.assertEqual(
+            extract_slots("a PVC raincoat", GAZETTEER),
+            {"material": ["polyvinyl chloride"]},
+        )
+
+    def test_eva_resolves_to_ethylene_vinyl_acetate(self) -> None:
+        self.assertEqual(
+            extract_slots("EVA foam sole", GAZETTEER),
+            {"material": ["ethylene vinyl acetate"]},
+        )
+
+    def test_material_alias_is_skipped_when_its_canonical_term_is_absent(self) -> None:
+        narrow_gazetteer = {"material": {"leather": 10}}
+        self.assertEqual(extract_slots("a PU bag", narrow_gazetteer), {})
 
 
 if __name__ == "__main__":
