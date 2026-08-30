@@ -1,0 +1,115 @@
+{
+  "algorithm_version": "coverage-stress-v1",
+  "catalog_row_count": 50000,
+  "dataset": "data/public_set.jsonl",
+  "dataset_sha256": "571359a8a69014c43fc30d39c996c4a28e875dccc249dffc707358757beb16c0",
+  "distinct_target_count": 200,
+  "field_order": [
+    "title",
+    "features",
+    "description",
+    "price",
+    "categories",
+    "details",
+    "average_rating",
+    "rating_number",
+    "store"
+  ],
+  "fields": {
+    "average_rating": {
+      "catalog_coverage": 1.0,
+      "catalog_present": 50000,
+      "desired_target_present": 200,
+      "masked_count": 0,
+      "original_target_present": 200,
+      "stress_target_present": 200,
+      "unfillable_shortfall": 0
+    },
+    "categories": {
+      "catalog_coverage": 1.0,
+      "catalog_present": 50000,
+      "desired_target_present": 200,
+      "masked_count": 0,
+      "original_target_present": 200,
+      "stress_target_present": 200,
+      "unfillable_shortfall": 0
+    },
+    "description": {
+      "catalog_coverage": 0.52226,
+      "catalog_present": 26113,
+      "desired_target_present": 104,
+      "masked_count": 0,
+      "original_target_present": 89,
+      "stress_target_present": 89,
+      "unfillable_shortfall": 15
+    },
+    "details": {
+      "catalog_coverage": 0.9666,
+      "catalog_present": 48330,
+      "desired_target_present": 193,
+      "masked_count": 7,
+      "original_target_present": 200,
+      "stress_target_present": 193,
+      "unfillable_shortfall": 0
+    },
+    "features": {
+      "catalog_coverage": 0.89562,
+      "catalog_present": 44781,
+      "desired_target_present": 179,
+      "masked_count": 21,
+      "original_target_present": 200,
+      "stress_target_present": 179,
+      "unfillable_shortfall": 0
+    },
+    "price": {
+      "catalog_coverage": 0.21054,
+      "catalog_present": 10527,
+      "desired_target_present": 42,
+      "masked_count": 136,
+      "original_target_present": 178,
+      "stress_target_present": 42,
+      "unfillable_shortfall": 0
+    },
+    "rating_number": {
+      "catalog_coverage": 1.0,
+      "catalog_present": 50000,
+      "desired_target_present": 200,
+      "masked_count": 0,
+      "original_target_present": 200,
+      "stress_target_present": 200,
+      "unfillable_shortfall": 0
+    },
+    "store": {
+      "catalog_coverage": 0.99372,
+      "catalog_present": 49686,
+      "desired_target_present": 199,
+      "masked_count": 1,
+      "original_target_present": 200,
+      "stress_target_present": 199,
+      "unfillable_shortfall": 0
+    },
+    "title": {
+      "catalog_coverage": 0.99996,
+      "catalog_present": 49998,
+      "desired_target_present": 200,
+      "masked_count": 0,
+      "original_target_present": 200,
+      "stress_target_present": 200,
+      "unfillable_shortfall": 0
+    }
+  },
+  "invariants": {
+    "no_fields_filled": true,
+    "non_targets_preserved": true,
+    "ordered_identifiers_preserved": true,
+    "planned_counts_matched": true
+  },
+  "matched_target_count": 200,
+  "output_catalog": "data/generated/catalog-coverage-stress.jsonl",
+  "output_catalog_sha256": "f0a1e6381f613409fee279db7d25f6b7603e46f6952b2ae7f3c10635447630a5",
+  "schema_version": 1,
+  "seed": "techjam-coverage-stress-v1",
+  "session_count": 200,
+  "source_catalog": "data/catalog.jsonl",
+  "source_catalog_sha256": "da979b05a68af864cb0dcf9ee6a81c010c7e66a57978ad286c7a2e005fc69a67"
+}

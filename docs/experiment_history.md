@@ -132,6 +132,47 @@
   | description | 0.52226 | Lower-weight supporting text |
   | price | 0.21054 | Too sparse for a default hard filter |
 
+  ### 3.3 Public-session target field coverage
+
+  The catalog-wide coverage above does not describe the 200 public-session
+  targets exactly. Joining each public `ground_truth.parent_asin` back to the
+  frozen catalog matched all 200 sessions to 200 distinct products. Coverage
+  uses the same non-empty-field rule as `analysis/catalog_profile.py`.
+
+  | Field | Full catalog | Public targets | Present | Difference |
+  | --- | ---: | ---: | ---: | ---: |
+  | categories | 1.00000 | 1.000 | 200/200 | +0.000 pp |
+  | title | 0.99996 | 1.000 | 200/200 | +0.004 pp |
+  | details | 0.96660 | 1.000 | 200/200 | +3.340 pp |
+  | store | 0.99372 | 1.000 | 200/200 | +0.628 pp |
+  | features | 0.89562 | 1.000 | 200/200 | +10.438 pp |
+  | description | 0.52226 | 0.445 | 89/200 | -7.726 pp |
+  | price | 0.21054 | **0.890** | **178/200** | **+67.946 pp** |
+  | average_rating | 1.00000 | 1.000 | 200/200 | +0.000 pp |
+  | rating_number | 1.00000 | 1.000 | 200/200 | +0.000 pp |
+
+  The public targets therefore do not follow the catalog-wide field-presence
+  distribution. The largest difference is price: 89.0% of public targets have
+  a price, versus 21.054% of the full catalog. Features are also complete on
+  the public targets, while description coverage is 7.726 percentage points
+  lower than the catalog average.
+
+  The two fields with meaningful missingness vary by scenario:
+
+  | Scenario | Sessions | Price | Description |
+  | --- | ---: | ---: | ---: |
+  | Buying | 80 | 0.9500 | 0.4875 |
+  | Browsing | 80 | 0.8750 | 0.4375 |
+  | Intent Override | 30 | 0.766667 | 0.333333 |
+  | Boundary | 10 | 0.9000 | 0.5000 |
+
+  Price coverage is therefore high across every scenario, not only Buying.
+  This diagnostic measures whether a field is populated; it does not show that
+  category values, price ranges, feature contents, or popularity values follow
+  the full-catalog distribution. The 200 labeled targets are not a random
+  catalog sample, and their coverage must not be assumed to hold for the 800
+  private sessions.
+
   ## 4. Chronological test and experiment record
 
   ### T0: Reproduce the official baseline
@@ -1008,6 +1049,44 @@
   reranking-only, not retrieval-broadening) would avoid this exact failure
   mode; not attempted here, to test the direct approach first. Evidence:
   [query-side stemming](../reports/experiments/query-stemming.md).
+
+### T25: Coverage-stress dual evaluation (diagnostic environment)
+
+- Date: 2026-08-30.
+- Commands: `python -m scripts.build_coverage_stress_catalog` and
+  `python -m scripts.run_dual_catalog_evaluation --output reports\\experiments\\coverage-stress-baseline.json`.
+- Construction: all 50,000 catalog rows and all 200 distinct public targets
+  matched. Target coverage changed from original to stress as follows: details
+  `200 -> 193` (7 masked), store `200 -> 199` (1), features `200 -> 179` (21),
+  description `89 -> 89` (15 unfillable shortfall), and price `178 -> 42` (136);
+  title, categories, average rating, and rating count remain `200/200`.
+- Tests: 88 automated tests passed before and after generation. The generated
+  catalog hash was `f0a1e6381f613409fee279db7d25f6b7603e46f6952b2ae7f3c10635447630a5`
+  on two consecutive builds. Identifier order, non-target records, planned
+  counts, and no-fill invariants passed.
+- Official overall: HitRate@10 `0.965`, MRR `0.662125`, MTTC `2.965`,
+  Efficiency `0.8035`, TechnicalScore `0.841838`. Coverage-stress overall:
+  `0.965`, `0.682284`, `2.915`, `0.8085`, `0.848885`; deltas are `+0.000`,
+  `+0.020159`, `-0.050`, `+0.0050`, and `+0.007047` respectively.
+- Scenarios (official -> stress, HitRate@10 / MRR / MTTC): Buying
+  `0.9500 / 0.696905 / 2.2875 -> 0.9500 / 0.714940 / 2.2750`; Browsing
+  `1.0000 / 0.665595 / 2.8250 -> 1.0000 / 0.688408 / 2.7625`; Intent Override
+  `0.933333 / 0.587685 / 4.933333 -> 0.933333 / 0.601852 / 4.933333`; Boundary
+  `0.9000 / 0.579444 / 3.6000 -> 0.9000 / 0.613333 / 3.2000`.
+- Smoke checks: both `python -m scripts.run_clarification_ablation --policies candidate`
+  and `python -m scripts.run_popularity_sweep --weights 1.2` emitted official,
+  coverage-stress, and delta payloads.
+- Decision: keep this as a diagnostic evaluation environment, not an Agent
+  method. Official metrics remain primary. Stress changes retrieval-visible
+  metadata and evaluator-materialized customer disclosures, matches marginal
+  presence only, leaves description at `89/200` because filling is forbidden,
+  does not correct public-target popularity bias, and cannot forecast private
+  results.
+- Evidence: [manifest](../reports/experiments/coverage-stress-catalog.json),
+  [dual result](../reports/experiments/coverage-stress-baseline.json),
+  [report](../reports/experiments/coverage-stress-dual-evaluation.md),
+  [design](designs/2026-08-29-coverage-stress-dual-evaluation-design.md), and
+  [plan](plans/2026-08-29-coverage-stress-dual-evaluation.md).
 
   ## 5. Current automated test coverage
 

@@ -6,7 +6,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from analysis.experiment_results import summarize_sessions
+from analysis.catalog_variants import add_catalog_variant_arguments, resolve_catalog_variants
+from analysis.experiment_results import summary_delta, summarize_sessions
 from analysis.experiment_split import stratified_split
 from evaluator.local_evaluator import catalog_index, evaluate, load_jsonl
 from starter.agent import Agent
@@ -72,6 +73,35 @@ def run_ablation(
     }
 
 
+def run_ablation_variants(
+    variants: dict[str, Path],
+    samples: list[dict],
+    policies: tuple[str, ...] = DEFAULT_POLICIES,
+    validation_size: int = 80,
+    seed: str = DEFAULT_SEED,
+) -> dict:
+    results = {
+        name: run_ablation(path, samples, policies, validation_size, seed)
+        for name, path in variants.items()
+    }
+    if set(results) != {"official", "coverage_stress"}:
+        return next(iter(results.values()))
+    official = results["official"]["policies"]
+    stress = results["coverage_stress"]["policies"]
+    return {
+        "schema_version": 1,
+        "catalogs": results,
+        "delta_direction": "coverage_stress_minus_official",
+        "deltas": {
+            policy: {
+                split: summary_delta(official[policy][split], stress[policy][split])
+                for split in ("full", "development", "validation")
+            }
+            for policy in policies
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compare clarification policies on a fixed split")
     parser.add_argument("--catalog", default="data/catalog.jsonl")
@@ -83,10 +113,19 @@ def main() -> None:
     parser.add_argument("--validation-size", type=int, default=80)
     parser.add_argument("--seed", default=DEFAULT_SEED)
     parser.add_argument("--policies", nargs="+", default=list(DEFAULT_POLICIES))
+    add_catalog_variant_arguments(parser)
     args = parser.parse_args()
 
-    result = run_ablation(
+    variants, _manifest = resolve_catalog_variants(
         args.catalog,
+        args.dataset,
+        args.catalog_mode,
+        args.stress_catalog,
+        args.stress_manifest,
+        seed=args.stress_seed,
+    )
+    result = run_ablation_variants(
+        variants,
         load_jsonl(args.dataset),
         policies=tuple(args.policies),
         validation_size=args.validation_size,

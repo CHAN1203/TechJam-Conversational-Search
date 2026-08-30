@@ -9,6 +9,8 @@ reports/zh-CN/
 results.json
 results_*.json
 data/catalog.jsonl
+# Local deterministic coverage-stress catalog artifacts.
+data/generated/
 data/releases/
 # Organizer-only code, private evaluation data, manifests, and build reports.
 organizer/
