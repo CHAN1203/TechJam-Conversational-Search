@@ -29,6 +29,14 @@ OPENING_TURN = 1
 # Kept small enough that a better constraint match still outranks mere
 # popularity; it separates candidates that would otherwise tie.
 POPULARITY_WEIGHT = 1.2
+# 89% of public-set targets carry a price against 21% of the catalog, and the
+# gap survives controlling for popularity. A priced listing is an active one,
+# and only active listings get purchased. A bonus, never a filter: 11% of
+# targets have no price.
+PRICE_WEIGHT = 2.0
+# Star rating. Much weaker than the review count and largely explained by it;
+# swept separately so the data decides whether it earns any weight at all.
+RATING_WEIGHT = 0.0
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -107,10 +115,14 @@ class Agent:
         clarification_policy: str = "candidate",
         gazetteer_path: str | Path = "data/gazetteer.json",
         popularity_weight: float = POPULARITY_WEIGHT,
+        price_weight: float = PRICE_WEIGHT,
+        rating_weight: float = RATING_WEIGHT,
     ) -> None:
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.popularity_weight = popularity_weight
+        self.price_weight = price_weight
+        self.rating_weight = rating_weight
         self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
         self._session_terms: dict[str, list[str]] = {}
@@ -131,6 +143,8 @@ class Agent:
         )
         batch: list[tuple[str, str, str, str, str, str, str]] = []
         self._popularity: dict[str, float] = {}
+        self._has_price: dict[str, bool] = {}
+        self._average_rating: dict[str, float] = {}
         with self.catalog_path.open(encoding="utf-8") as handle:
             for line in handle:
                 product = json.loads(line)
@@ -140,6 +154,15 @@ class Agent:
                     )
                 except (TypeError, ValueError):
                     self._popularity[str(product["parent_asin"])] = 0.0
+                self._has_price[str(product["parent_asin"])] = (
+                    product.get("price") not in (None, "")
+                )
+                try:
+                    self._average_rating[str(product["parent_asin"])] = float(
+                        product.get("average_rating") or 0.0
+                    )
+                except (TypeError, ValueError):
+                    self._average_rating[str(product["parent_asin"])] = 0.0
                 batch.append(
                     (
                         str(product["parent_asin"]),
@@ -256,6 +279,8 @@ class Agent:
                     "store": row[5],
                     "description": row[6],
                     "rating_number": self._popularity.get(row[0], 0.0),
+                    "has_price": self._has_price.get(row[0], False),
+                    "average_rating": self._average_rating.get(row[0], 0.0),
                 }
                 for row in rows
             ]
@@ -266,6 +291,8 @@ class Agent:
                     candidates,
                     top_k,
                     popularity_weight=self.popularity_weight,
+                    price_weight=self.price_weight,
+                    rating_weight=self.rating_weight,
                 )
             ]
         asked = self._session_asked_attributes[session_id]

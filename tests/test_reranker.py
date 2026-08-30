@@ -127,3 +127,72 @@ class PopularityPriorTest(unittest.TestCase):
             rerank_candidates(["leather", "buckle"], candidates, 2),
             ["OBSCURE", "POPULAR"],
         )
+
+class PricePresencePriorTest(unittest.TestCase):
+    def test_priced_candidate_wins_when_everything_else_ties(self) -> None:
+        # 89% of public targets carry a price against 21% of the catalog, and
+        # the gap holds within popularity bands. A listing with a price is an
+        # active listing, and only active listings get purchased.
+        candidates = [
+            {"parent_asin": "NO-PRICE", "title": "leather belt", "rating_number": 500},
+            {"parent_asin": "PRICED", "title": "leather belt", "rating_number": 500,
+             "has_price": True},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, price_weight=2.0),
+            ["PRICED", "NO-PRICE"],
+        )
+
+    def test_price_never_outweighs_a_missing_constraint(self) -> None:
+        candidates = [
+            {"parent_asin": "PRICED-WEAK", "title": "leather", "has_price": True},
+            {"parent_asin": "UNPRICED-EXACT", "title": "leather belt buckle"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt", "buckle"], candidates, 2, price_weight=2.0),
+            ["UNPRICED-EXACT", "PRICED-WEAK"],
+        )
+
+    def test_default_price_weight_changes_nothing(self) -> None:
+        candidates = [
+            {"parent_asin": "NO-PRICE", "title": "leather belt", "rating_number": 500},
+            {"parent_asin": "PRICED", "title": "leather belt", "rating_number": 500,
+             "has_price": True},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2),
+            ["NO-PRICE", "PRICED"],
+        )
+
+class AverageRatingPriorTest(unittest.TestCase):
+    def test_better_rated_candidate_wins_when_everything_else_ties(self) -> None:
+        candidates = [
+            {"parent_asin": "MEDIOCRE", "title": "leather belt",
+             "rating_number": 500, "average_rating": 3.5},
+            {"parent_asin": "WELL-RATED", "title": "leather belt",
+             "rating_number": 500, "average_rating": 4.8},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, rating_weight=2.0),
+            ["WELL-RATED", "MEDIOCRE"],
+        )
+
+    def test_missing_average_rating_is_treated_as_unrated_not_as_an_error(self) -> None:
+        candidates = [
+            {"parent_asin": "RATED", "title": "leather belt", "average_rating": 4.5},
+            {"parent_asin": "UNRATED", "title": "leather belt"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, rating_weight=2.0),
+            ["RATED", "UNRATED"],
+        )
+
+    def test_default_rating_weight_changes_nothing(self) -> None:
+        candidates = [
+            {"parent_asin": "MEDIOCRE", "title": "leather belt", "average_rating": 3.5},
+            {"parent_asin": "WELL-RATED", "title": "leather belt", "average_rating": 4.8},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2),
+            ["MEDIOCRE", "WELL-RATED"],
+        )
