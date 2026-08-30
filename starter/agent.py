@@ -300,8 +300,6 @@ class Agent:
     ) -> list[str]:
         """E11 state: a flat term list patched in place, rebuilt at an override."""
         accumulated_slots = self._session_slots.get(session_id, {})
-        if session_id not in self._session_route:
-            self._session_route[session_id] = _classify_route(message_slots)
         if _is_intent_override(user_message):
             # "Ignore my earlier preference" revokes what the customer
             # volunteered on the opening turn. It does not revoke the answers
@@ -389,8 +387,10 @@ class Agent:
             if _is_no_preference(user_message)
             else extract_slots(user_message, self.gazetteer)
         )
-        # E13 route classification, read off the opening turn only. Restored
-        # here after the state-advance refactor moved the block it lived in.
+        # E13 route classification, read off the opening turn only. It lives
+        # here rather than in either state-advance method because both models
+        # must classify: the automatic merge followed it into `_advance_slots`,
+        # which the default ledger path never executes.
         if session_id not in self._session_route:
             self._session_route[session_id] = _classify_route(message_slots)
         advance = (

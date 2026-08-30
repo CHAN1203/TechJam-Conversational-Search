@@ -1546,10 +1546,16 @@ sparser metadata. Evidence:
   - E22-C1's `term_weights` machinery was removed entirely rather than merged.
     It was already a measured no-op and would have been dead code after the
     restructuring.
-  - `_classify_route` had to be restored by hand. It sat inside the block the
-    state-advance refactor replaced, and the automatic merge dropped it
-    silently; 18 tests failed with `KeyError` until it was put back. A clean
-    automatic merge is not evidence that nothing was lost.
+  - E13's `_classify_route` call had to be moved by hand. The automatic merge
+    did not drop it -- it *relocated* it. The call sat next to
+    `accumulated_slots` in `feat/hs`, that block became `_advance_slots` in the
+    refactor, and the merge followed the context and carried the call in with
+    it. But `_advance_slots` only runs under `state_model="slots"`, which is no
+    longer the default, so the default ledger path never classified a route and
+    18 tests failed with `KeyError`. The call now lives in `respond()`, which
+    both state models pass through. A clean automatic merge is not evidence
+    that nothing moved somewhere it does not run, and that failure mode is
+    harder to spot than deletion: the code is still there and still greps.
   - E13's `required_terms` now reads `self._session_slots[session_id]` instead
     of a local. Under the ledger that resolves to `slots_view()`, which returns
     only **active** entries, so a revoked constraint is never required of a
