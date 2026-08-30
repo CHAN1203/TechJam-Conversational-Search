@@ -2,7 +2,20 @@
 
 ## Status
 
-**Retained at `rejection_weight = 1.0`**, which is not the highest-scoring
+**RETIRED on 2026-08-30 after the E26 merge.** The
+[merged-system ablation](merged-system-ablation.md) measured its marginal
+contribution at `0.000083`, with MRR fractionally *higher* without it. The
+three Buying sessions it rescued are now rescued earlier by the phrase bonus,
+the price prior and semantic reranking, so it fires after the problem has
+already been solved. Removing it also retires the only argument this system
+needed about the submission rule requiring recommendations "ordered best to
+worst" -- an argument that was sound at weight `1.0`, but not worth making for
+`0.000083`. Removal was confirmed at `0.902401`, exactly the ablation's
+prediction. The record below is the original result on its own line.
+
+---
+
+**Originally retained at `rejection_weight = 1.0`**, which is not the highest-scoring
 value. The score keeps rising to a saturation point that violates the
 submission rule requiring recommendations ordered best to worst; that region is
 declined deliberately and the cost of declining it is `0.001625`.

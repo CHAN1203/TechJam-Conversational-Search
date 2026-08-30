@@ -8,8 +8,9 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: the merged line, with public HitRate@10 `0.995`, MRR
-> `0.776613`, MTTC `2.400`, and TechnicalScore `0.902484`. See E26 and T34.
+> Current best: the merged line with E24 retired, at public HitRate@10 `0.995`,
+> MRR `0.776669`, MTTC `2.405`, and TechnicalScore `0.902401`. See E26, T34,
+> T35 and T36.
 >
 > Two lines were developed in parallel and merged on 2026-08-30. E12-E21 came
 > from `feat/hs` and improved rank quality; E22-E25 came from
@@ -105,7 +106,7 @@
 | E22-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | E11 (parallel) | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
 | E23-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | E11 (parallel) | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
 | E23-B | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | E11 (parallel) | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
-| E24 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | E11 (parallel) | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | **Current best** | See branch |
+| E24 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | E11 (parallel) | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | Retired at T36 (marginal `0.000083`) | See branch |
 | E25 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | E11 (parallel) | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
 | E26 | Merged line | E12-E21 rank quality merged with E22-E25 conversational coverage | 195 | E21 | **0.995** | +0.015 | **0.776613** | **2.400** | **0.8600** | **0.902484** | **+0.021814** | **Current best** | See T34 |
 
@@ -1611,6 +1612,38 @@ sparser metadata. Evidence:
   the mechanisms currently present, not useless on the private 800.
 - Evidence: [merged-system ablation](../reports/experiments/merged-system-ablation.md).
 
+### T36: Retiring the implicit-rejection penalty
+
+- Date: 2026-08-30
+- Reason: T35 measured E24's marginal contribution in the merged system at
+  `0.000083`, with MRR fractionally higher without it. On its own line it was
+  worth `+0.014050`; the three Buying sessions it rescued are now rescued
+  earlier by the phrase bonus, the price prior and semantic reranking, so the
+  mechanism fires after the problem has already been solved.
+- Second reason, independent of score: E24 was the only part of this system
+  that needed an argument about `docs/submission_rules.md` requiring
+  `recommendations` to be "ordered best to worst". The argument was sound at
+  weight `1.0` -- the penalty was about one field-weight unit against match
+  scores of 7 to 30, so a clearly better match still outranked a merely newer
+  one, and `test_relevance_still_outranks_novelty` locked that. But not having
+  to make the argument is better than making it for `0.000083`.
+- Removed: `rejection_weight`, `Agent._shown_penalty`, `Agent._session_shown`,
+  the `REJECTION_WEIGHT` constant, and `rerank_candidates`'s `shown_penalty`
+  parameter. The reranker is back to six scoring terms.
+- Kept: the information-gain probe and everything it does, including asking an
+  open question once and then cycling named attributes rather than concluding
+  the customer has nothing left to say. Two tests that protected probe
+  behaviour rather than the penalty moved to `StuckConversationTest`.
+- Result: `0.902401`, exactly T35's prediction. HitRate@10 `0.995`, MRR
+  `0.776669`, MTTC `2.405`; Buying `0.987500`, Browsing, Boundary and Intent
+  Override all `1.000000`. No scenario changes.
+- Automated tests: 195 before, 188 after.
+- Note on method: this is the first mechanism in the project retired for having
+  *stopped* paying rather than for never having paid. The matrix cannot surface
+  that case, because a row's `Delta` is fixed on the day it is written. Only a
+  periodic ablation can, and one is worth running again whenever a new
+  mechanism lands.
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -1635,7 +1668,7 @@ sparser metadata. Evidence:
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
   | `test_ledger.py` | 30 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, probe thresholds, rejection penalty, slot/ledger equivalence |
 | `test_session_trace.py` | 13 | Override keep/drop classification, normalization loss, dead-turn detection, trace/evaluator agreement |
-| **Total** | **195** | Current full regression suite after the merge |
+| **Total** | **188** | Current full regression suite (195 before E24 was retired at T36) |
 
 The per-module counts for the older modules have drifted as experiments were
 added. The authoritative number is whatever `python -m unittest discover -s

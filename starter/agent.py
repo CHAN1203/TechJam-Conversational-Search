@@ -4,7 +4,6 @@ import json
 import math
 import re
 import sqlite3
-from collections import Counter
 from pathlib import Path
 
 from starter.clarification import DEFAULT_ATTRIBUTE_ORDER, select_attribute
@@ -42,11 +41,6 @@ OPENING_TURN = 1
 # Kept small enough that a better constraint match still outranks mere
 # popularity; it separates candidates that would otherwise tie.
 POPULARITY_WEIGHT = 1.2
-# One field-weight unit against match scores of 7 to 30, so a product the
-# customer has already declined is nudged down but a clearly better match still
-# outranks a merely newer one. Larger values score higher and stop being an
-# ordering; see reports/experiments/implicit-rejection-reranking.md.
-REJECTION_WEIGHT = 1.0
 # 89% of public-set targets carry a price against 21% of the catalog, and the
 # gap survives controlling for popularity. A priced listing is an active one,
 # and only active listings get purchased. A bonus, never a filter: 11% of
@@ -164,7 +158,6 @@ class Agent:
         popularity_weight: float = POPULARITY_WEIGHT,
         state_model: str = "ledger",
         no_gain_probe: int | None = 1,
-        rejection_weight: float = REJECTION_WEIGHT,
         price_weight: float = PRICE_WEIGHT,
         rating_weight: float = RATING_WEIGHT,
         retrieval_mode: str = "bm25",
@@ -178,7 +171,6 @@ class Agent:
         self.clarification_policy = clarification_policy
         self.state_model = state_model
         self.no_gain_probe = no_gain_probe
-        self.rejection_weight = rejection_weight
         self.popularity_weight = popularity_weight
         self.price_weight = price_weight
         self.rating_weight = rating_weight
@@ -192,7 +184,6 @@ class Agent:
         self._session_slots: dict[str, dict[str, dict[str, int]]] = {}
         self._session_ledgers: dict[str, ConstraintLedger] = {}
         self._session_no_gain: dict[str, int] = {}
-        self._session_shown: dict[str, Counter] = {}
         self._session_route: dict[str, str] = {}
         self._build_index()
 
@@ -297,7 +288,6 @@ class Agent:
         self._session_slots[session_id] = {}
         self._session_ledgers[session_id] = ConstraintLedger()
         self._session_no_gain[session_id] = 0
-        self._session_shown[session_id] = Counter()
         self._session_route.pop(session_id, None)
 
     def _advance_slots(
@@ -383,29 +373,6 @@ class Agent:
             self.no_gain_probe is not None
             and self._session_no_gain.get(session_id, 0) >= self.no_gain_probe
         )
-
-    def _shown_penalty(self, session_id: str) -> dict[str, float] | None:
-        """Down-weight what the customer has already seen and not taken.
-
-        Applied only once the conversation is stuck. While new constraints are
-        still arriving the ranking is improving for legitimate reasons and the
-        top of the list deserves to be stable; once nothing new is arriving,
-        showing the same ten products again is the one outcome that cannot
-        succeed.
-
-        This is genuine re-scoring, not paging. The agent reports the order it
-        actually believes given that these items were declined, rather than
-        handing back a slice of a list it still ranks the same way.
-        """
-        if not self.rejection_weight or not self._is_stuck(session_id):
-            return None
-        shown = self._session_shown.get(session_id)
-        if not shown:
-            return None
-        return {
-            parent_asin: self.rejection_weight * count
-            for parent_asin, count in shown.items()
-        }
 
     def respond(
         self,
@@ -503,7 +470,6 @@ class Agent:
                     candidates,
                     top_k,
                     popularity_weight=self.popularity_weight,
-                    shown_penalty=self._shown_penalty(session_id),
                     price_weight=self.price_weight,
                     rating_weight=self.rating_weight,
                     required_terms=required_terms,
@@ -514,9 +480,6 @@ class Agent:
                     phrase_weight=self.phrase_weight,
                 )
             ]
-        self._session_shown[session_id].update(
-            item["parent_asin"] for item in recommendations
-        )
         asked = self._session_asked_attributes[session_id]
         if self._is_stuck(session_id):
             # Named attributes have stopped yielding, so ask an open question.

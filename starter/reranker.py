@@ -91,7 +91,6 @@ def rerank_candidates(
     semantic_weight: float = 0.0,
     phrase_terms: Sequence[str] | None = None,
     phrase_weight: float = 0.0,
-    shown_penalty: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Order candidates by field-weighted term matches.
 
@@ -142,21 +141,10 @@ def rerank_candidates(
     just the same words scattered independently -- "running shoe" as a
     phrase is more specific than a document matching "running" and "shoe"
     in unrelated places.
-
-    `shown_penalty` subtracts from a candidate the customer has already been
-    shown and has not taken. A shopper who saw ten products and kept talking
-    has implicitly declined them, and repeating the same ten is the one
-    outcome that cannot succeed. The agent applies it only once its
-    information-gain counter says the conversation has stopped yielding; while
-    new constraints are arriving the ranking is improving for legitimate
-    reasons and the top of the list is left alone. The weight is kept to about
-    one field-weight unit so a clearly better match still outranks a merely
-    newer one; larger values stop being an ordering.
     """
     required = set(required_terms or ())
     semantic_scores = semantic_scores or {}
     phrase_terms = phrase_terms or ()
-    shown_penalty = shown_penalty or {}
     scored = []
     for rank, candidate in enumerate(candidates):
         parent_asin = str(candidate["parent_asin"])
@@ -168,7 +156,6 @@ def rerank_candidates(
         score += phrase_weight * _phrase_match_count(phrase_terms, candidate)
         if required and all(best_weight_by_term.get(term, 0.0) > 0.0 for term in required):
             score += completeness_bonus
-        score -= shown_penalty.get(parent_asin, 0.0)
         scored.append((score, rank, parent_asin))
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [parent_asin for _, _, parent_asin in scored[:top_k]]

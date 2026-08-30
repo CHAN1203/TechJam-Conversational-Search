@@ -82,6 +82,12 @@ about the submission rule requiring recommendations "ordered best to worst".
 That argument was sound at weight `1.0`, but not having to make it is better
 than making it for `0.000083`.
 
+**Acted on.** E24 was removed on 2026-08-30 (T36). The agent scores `0.902401`
+without it, exactly this table's prediction, with every scenario hit rate
+unchanged. `rejection_weight`, `_shown_penalty`, `_session_shown` and the
+reranker's `shown_penalty` parameter are gone; the two tests that protected
+probe behaviour rather than the penalty were kept.
+
 **Semantic reranking (E18) contributes `0.001723`**, and it is the sole reason
 `requirements.txt` exists. `starter/agent.py` imports `starter/dense.py`
 unconditionally, so scikit-learn, scipy, joblib and threadpoolctl are required

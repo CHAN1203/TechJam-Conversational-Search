@@ -168,11 +168,10 @@ class AgentStateModelTest(AgentFixture, unittest.TestCase):
 
         self.assertEqual("ledger", agent.state_model)
         self.assertEqual(1, agent.no_gain_probe)
-        self.assertEqual(1.0, agent.rejection_weight)
 
     def test_e11_remains_reproducible_from_explicit_flags(self) -> None:
         agent = self.build_agent(self.CATALOG)
-        agent.state_model, agent.no_gain_probe, agent.rejection_weight = "slots", None, 0.0
+        agent.state_model, agent.no_gain_probe = "slots", None
         agent.reset("session", {})
 
         response = agent.respond("session", "I want a leather belt", 1, 2)
@@ -287,25 +286,16 @@ class InformationGainProbeTest(AgentFixture, unittest.TestCase):
         self.assertNotEqual("other", second["ask_attribute"])
 
 
-class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
-    """E16: what the customer was shown and did not take is negative evidence."""
+class StuckConversationTest(AgentFixture, unittest.TestCase):
+    """How the agent behaves once the information-gain probe says it is stuck.
 
-    CATALOG = [
-        {
-            "parent_asin": "STRONG-SHOWN",
-            "title": "Leather Belt Buckle",
-            "categories": ["Accessories", "Belts"],
-            "features": ["Buckle closure"], "details": {"material": "leather"},
-            "store": "Example", "description": [],
-        },
-        {
-            "parent_asin": "WEAK-UNSHOWN",
-            "title": "Leather",
-            "categories": ["Accessories"],
-            "features": [], "details": {}, "store": "Example", "description": [],
-        },
-    ]
-    GAZETTEER = {"category": {"belt": 2}, "material": {"leather": 1}}
+    The implicit-rejection penalty used to live here too. It was retired after
+    the merged-system ablation measured its marginal contribution at 0.000083;
+    see reports/experiments/merged-system-ablation.md.
+    """
+
+    CATALOG = AgentStateModelTest.CATALOG
+    GAZETTEER = AgentStateModelTest.GAZETTEER
 
     def _agent(self, **kwargs) -> Agent:
         agent = self.build_agent(self.CATALOG, gazetteer=self.GAZETTEER)
@@ -313,96 +303,6 @@ class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
             setattr(agent, name, value)
         agent.reset("session", {})
         return agent
-
-    def test_the_default_penalty_stays_inside_the_defensible_range(self) -> None:
-        # Large weights score higher and stop being an ordering; see
-        # test_relevance_still_outranks_novelty.
-        self.assertEqual(1.0, self.build_agent(self.CATALOG).rejection_weight)
-
-    def test_shown_products_are_recorded(self) -> None:
-        agent = self._agent(state_model="ledger")
-
-        agent.respond("session", "I want a leather belt buckle", 1, 2)
-
-        self.assertEqual(
-            {"STRONG-SHOWN": 1, "WEAK-UNSHOWN": 1},
-            dict(agent._session_shown["session"]),
-        )
-
-    def test_nothing_is_penalised_while_the_conversation_still_yields(self) -> None:
-        # The ranking is improving for legitimate reasons; the top of the list
-        # deserves to be stable.
-        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
-        agent.respond("session", "I want a leather belt buckle", 1, 2)
-
-        self.assertIsNone(agent._shown_penalty("session"))
-
-    def test_a_stuck_turn_penalises_what_was_already_shown(self) -> None:
-        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
-        agent.respond("session", "I want a leather belt buckle", 1, 2)
-        agent.respond("session", "I don't have an additional preference for color.", 2, 2)
-
-        penalty = agent._shown_penalty("session")
-
-        self.assertIsNotNone(penalty)
-        self.assertGreater(penalty["STRONG-SHOWN"], 0.0)
-
-    def test_relevance_still_outranks_novelty(self) -> None:
-        """The submission rules require recommendations ordered best to worst.
-
-        A novelty preference the agent can justify is one that a better match
-        can overrule. A weight large enough to rank any unshown item above any
-        shown item regardless of match quality is mechanical exclusion, not an
-        ordering, so the retained weight must stay small enough that this test
-        holds.
-        """
-        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
-        agent.respond("session", "I want a leather belt buckle", 1, 2)
-        response = agent.respond(
-            "session", "I don't have an additional preference for color.", 2, 2
-        )
-
-        ranked = [item["parent_asin"] for item in response["recommendations"]]
-        self.assertEqual("STRONG-SHOWN", ranked[0])
-
-    def test_the_current_turn_is_not_penalised_by_its_own_recommendations(self) -> None:
-        """Scoring happens before the turn's own output is recorded as shown.
-
-        This ordering is what makes the mechanism safe. In Buying, Browsing and
-        Boundary the evaluator ends the session the moment the target enters
-        the Top-10, so "the target has been shown" and "the session is still
-        running" cannot both hold. Because a turn's own recommendations are
-        counted only after that turn has been scored, the target's shown count
-        is provably zero at every scoring call, and it can never be penalised.
-        Reversing these two statements would silently break that guarantee.
-        """
-        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
-        agent.respond("session", "I don't have a preference for anything.", 1, 2)
-
-        # The first turn is stuck by construction here, yet nothing had been
-        # shown before it, so no candidate carries a penalty.
-        self.assertIsNone(agent._shown_penalty("session"))
-
-    def test_a_product_is_penalised_only_from_the_turn_after_it_was_shown(self) -> None:
-        # The penalty must be read at the moment of scoring, not afterwards:
-        # by the time respond() returns, the turn's own output has been counted.
-        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
-        seen: list[dict[str, float] | None] = []
-        real = starter.agent.rerank_candidates
-
-        def spy(*args, **kwargs):
-            seen.append(kwargs.get("shown_penalty"))
-            return real(*args, **kwargs)
-
-        with patch.object(starter.agent, "rerank_candidates", spy):
-            agent.respond("session", "I want a leather belt buckle", 1, 2)
-            agent.respond(
-                "session", "I don't have an additional preference for color.", 2, 2
-            )
-
-        self.assertIsNone(seen[0])
-        self.assertEqual(1.0, seen[1]["STRONG-SHOWN"])
-        self.assertEqual(2, agent._session_shown["session"]["STRONG-SHOWN"])
 
     def test_a_persistently_stuck_agent_never_repeats_a_question(self) -> None:
         """E17 measured the alternative and this is why it was rejected.
@@ -413,7 +313,7 @@ class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
         rejection penalty shuffles individual products. Round-robin coverage is
         what keeps a stuck conversation from asking one dead question forever.
         """
-        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent = self._agent(state_model="ledger", no_gain_probe=1)
         agent.respond("session", "I want a leather belt", 1, 2)
         asked = [
             agent.respond("session", f"I don't have an additional preference for x{i}.", i + 2, 2)[
@@ -428,7 +328,7 @@ class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
         # "other" being a strict superset of every named attribute is a property
         # of this simulator, not of shoppers. The agent must not conclude from
         # one empty answer that nothing is left.
-        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent = self._agent(state_model="ledger", no_gain_probe=1)
         agent.respond("session", "I want a leather belt", 1, 2)
         asked = [
             agent.respond("session", f"I don't have an additional preference for x{i}.", i + 2, 2)[
