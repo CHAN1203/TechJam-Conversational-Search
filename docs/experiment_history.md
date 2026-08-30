@@ -8,8 +8,12 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E11 Popularity Prior, with public HitRate@10 `0.965`,
-> MRR `0.662125`, MTTC `2.965`, and TechnicalScore `0.841838`.
+> Current best: E13-C Constraint Ledger with the information-gain probe, with
+> public HitRate@10 `0.980`, MRR `0.698381`, MTTC `2.540`, and TechnicalScore
+> `0.868714`. Recommended configuration:
+> `Agent(state_model="ledger", no_gain_probe=1)`. Constructor defaults remain
+> `state_model="slots"` and `no_gain_probe=None`, so an unflagged `Agent()`
+> still reproduces E11 at `0.841838`.
 
   Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
   recording another method.
@@ -40,6 +44,11 @@
 | E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 | E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | **Current best** | `52789c4` |
+| E13-A | Constraint ledger Stage 0 | Three override-state correctness fixes, measured separately | 103 | 0.965 | +0.000 | 0.662125 | 2.965 | 0.8035 | 0.841838 | +0.000000 | Reject 2 of 3; slot negation guard retained on correctness | Not committed |
+| E13-B | Constraint ledger Stage 1 | Append-only entries with status instead of deletion; query projected from active entries | 118 | **0.975** | +0.010 | **0.677881** | **2.810** | 0.8190 | **0.854664** | **+0.012826** | Keep | See branch |
+| E13-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
+| E13-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
+| E14-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -67,6 +76,9 @@
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
 | E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
 | E11 Popularity prior | 0.9500 | **1.0000** | **0.933333** | 0.9000 |
+| E13-A Stage 0 retained | 0.9500 | **1.0000** | 0.933333 | 0.9000 |
+| E13-B Constraint ledger | 0.9500 | **1.0000** | **1.000000** | 0.9000 |
+| E13-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -537,6 +549,129 @@
   [design](designs/2026-08-29-coverage-stress-dual-evaluation-design.md), and
   [plan](plans/2026-08-29-coverage-stress-dual-evaluation.md).
 
+### T17: Constraint ledger Stage 0, override-state correctness (rejected)
+
+- Date: 2026-08-30
+- Hypothesis: `scripts/trace_session` showed that 26 of 30 intent_override
+  sessions already rank the target inside the Top-10 before the override, and
+  that 6 lose it at the override turn. Three defects were held responsible:
+  the override rebuilds the term list from singular gazetteer forms, the
+  override sentence's own words enter the query permanently, and the
+  no-preference guard covers `_constraint_terms` but not `extract_slots`.
+- Method: each fix implemented with a targeted test that fails against E11 for
+  its stated reason, then measured alone and in combination.
+- Ablation validation TechnicalScore: none (E11) `0.844722`, surface form
+  `0.843524`, stopwords `0.837149`, slot guard `0.844722`, surface+guard
+  `0.843430`, all three `0.839274`.
+- Key finding: removing conversational filler *costs* two intent_override
+  sessions. Those terms widen the FTS5 `MATCH` expression and change which
+  hundred documents enter the candidate pool, while contributing nothing in
+  the reranker. The pipeline depends on query width, not query cleanliness.
+- Decision: reject surface-form preservation and the stopword set; retain the
+  slot negation guard, which is exactly score-neutral, on correctness grounds.
+  Rejected code and tests removed per the T3 precedent.
+- Limitation: the full set and the validation split disagree in sign for the
+  combined arm (`+0.001963` full, `-0.005448` validation). These differences
+  sit near the noise floor of a 200-session set.
+- Evidence: [Stage 0 report](../reports/experiments/constraint-ledger-stage0.md).
+
+### T18: Constraint ledger Stage 1, append-only state and query projection (keep)
+
+- Date: 2026-08-30
+- Change: `_session_terms` removed from the scored path. Every token becomes a
+  ledger entry carrying its own surface form, normalized form, slot or `null`,
+  status, source, and first and last turn. An override sets statuses; nothing
+  is deleted, so the term list is never rebuilt. The query is projected from
+  the active entries each turn. E11's three override rules are unchanged; they
+  are applied to entries rather than to slot-dictionary keys, which is what
+  gives an unclassified token a `first_turn` of its own.
+- Stage 0 shaped two requirements: `slot=None` entries are projected like any
+  other active entry, and surface forms are projected rather than gazetteer
+  singulars.
+- Overall: HitRate@10 `0.975`, MRR `0.677881`, MTTC `2.810`, Efficiency
+  `0.8190`, TechnicalScore `0.854664`; validation `0.853190`.
+- Scenarios: Buying `0.950000`, Browsing `1.000000`, Boundary `0.900000`,
+  Intent Override `0.933333 -> 1.000000`. Three of four scenarios are identical
+  to the last decimal, which is the evidence that the change touches only what
+  it claims to.
+- Structural invariants: query width never falls below E11's at the same turn
+  (0 violations in 200 sessions); normalization losses across the 30 override
+  turns fall from 54 to 3, and all three residuals are cases where the override
+  message itself restates the term in singular.
+- The originally specified invariant, "zero query terms lost at the override
+  turn", was mis-specified and is corrected in the design: an override is a
+  revocation, so the constraints it revokes must leave the query.
+- Decision: keep. `state_model="slots"` remains the constructor default and
+  reproduces E11 at `0.841838` / `0.844722`.
+- Evidence: [Stage 1 report](../reports/experiments/constraint-ledger-stage1.md).
+
+### T19: Constraint ledger Stage 2, weighting and the information-gain probe
+
+- Date: 2026-08-30
+- E13-C1, term weighting by source: the ledger records whether a constraint was
+  volunteered or answered; `answered_weight` scales the latter in the reranker.
+  Validation by weight: `0.6` `0.836582`, `1.0` (off) `0.853190`, `1.2`
+  `0.851524`, `1.5` `0.850040`. The optimum is the off position on both sides.
+  Reject. `term_weights` and `ConstraintLedger.projection_weights` are retained
+  as no-ops at their defaults, per the T13 precedent that kept `idf`.
+  `decay_lambda` stays `0` and was never swept: the public set contains no
+  signal from which to fit a decay rate.
+- E13-C, information-gain probe: retrieval is a pure function of the projected
+  terms, so a turn adding no active entry cannot change the ranking. After `K`
+  consecutive such turns the agent asks an open question instead of continuing
+  down the attribute order. Validation by threshold: `0` `0.858051`, `1`
+  `0.867378`, `2` `0.857690`, `3` `0.854190`.
+- `K = 0` is T9's rejected always-ask-`other` probe. It has the best
+  development score of any configuration and a validation score `0.009327`
+  below `K = 1`, and is the only configuration that loses an intent_override
+  session. Selection used validation alone.
+- Result at `K = 1`: HitRate@10 `0.980`, MRR `0.698381`, MTTC `2.540`,
+  Efficiency `0.8460`, TechnicalScore `0.868714`; validation `0.867378`.
+- Boundary moves from `0.900000` to `1.000000`. It had been unchanged through
+  every popularity weight in T15 and through Stages 0 and 1. A boundary session
+  is one where every reply adds nothing, which is exactly the probe's trigger.
+- Dead turns: `163/586` at E11, `140/557` at E13-B, `85/504` at E13-C. The count
+  of sessions containing a dead turn is unchanged at 57, correctly: the probe
+  cannot prevent the first one, because that turn is the signal.
+- Limitation: this is the experiment most exposed to the simulator. The gain
+  depends on the evaluator answering `other` with up to two undisclosed
+  constraints, which T9 documented and warned may not hold privately. The
+  mechanism is a general strategy; the size of the gain is not guaranteed to
+  transfer. If the private simulator treats `other` like any other attribute,
+  this degrades toward E13-B rather than breaking.
+- Evidence: [Stage 2 report](../reports/experiments/constraint-ledger-stage2.md).
+
+### T20: Rank-margin diagnostic and the catalog quality prior (rejected)
+
+- Date: 2026-08-30
+- Purpose: with HitRate@10 at `0.980`, decide whether the remaining effort
+  belongs to recall or to ranking. Rank distribution over 200 sessions: 114 at
+  rank 1, 30 at rank 2, 10 at rank 3, 42 at ranks 4-10, 4 missed. Moving every
+  hit to rank 1 is worth `+0.084486`; finding all four misses is worth
+  `+0.010000`. Ranking headroom is 8.4x recall headroom.
+- The four Buying misses are one recall failure and three ranking failures.
+  `public_0020` carries a single review and never enters the Top-100 pool; it
+  is the documented cost of the popularity prior. The other three sit at pool
+  positions 11, 17 and 28 the whole time and share a shape: every hard
+  constraint is a generic material word.
+- Of 40 sessions hitting at rank 2 or 3, 23 are decided by popularity rather
+  than by matching. Median score gap to rank 1 is `0.669`, minimum `0.003`, and
+  23 of 40 gaps are below one field-weight unit.
+- E14-A: `average_rating` has full catalog coverage and appeared in no scored
+  path. Target median sits at the 66.8th catalog percentile against the 99.5th
+  for `rating_number`; only 16/200 targets rate below 4.0 against 32.6% of the
+  catalog. Validation by weight: `0.0` `0.867378`, `0.5` `0.865258`, `1.0`
+  `0.867326`, `2.0` `0.868299`. Reject: the range is `0.003`, non-monotone,
+  with no plateau, and development and validation argmax disagree outright.
+  Code removed.
+- Consequence for sequencing: the near-ties are not breakable by catalog
+  metadata, and `average_rating` was the last unused fully covered field. E12's
+  Gate 1 measures first-turn Recall@100, which limits one session of 200 and is
+  structurally unable to distinguish rank 2 from rank 1. If E12 is run, that
+  gate should be restated to measure rank quality. A re-measurement of IDF under
+  the clean gazetteer and ledger is a hypothesis worth testing, not a prediction.
+- Evidence: [rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -553,7 +688,13 @@
   | `test_experiment_results.py` | 1 | Split metrics, scenario metrics, and TechnicalScore |
   | `test_gazetteer.py` | 16 | Vocabulary mining, normalization, coverage, and one-slot precedence |
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
-  | **Total** | **53** | Current full regression suite |
+  | `test_ledger.py` | 27 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, weights, probe thresholds, slot/ledger equivalence |
+| `test_session_trace.py` | 13 | Override keep/drop classification, normalization loss, dead-turn detection, trace/evaluator agreement |
+| **Total** | **127** | Current full regression suite |
+
+The per-module counts for the older modules have drifted as experiments were
+added. The authoritative number is whatever `python -m unittest discover -s
+tests` reports.
 
   Run the full tests:
 
@@ -623,3 +764,8 @@
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
 - [Popularity prior](../reports/experiments/popularity-prior.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)
+- [Constraint ledger design](designs/2026-08-30-constraint-ledger-design.md)
+- [Constraint ledger Stage 0](../reports/experiments/constraint-ledger-stage0.md)
+- [Constraint ledger Stage 1](../reports/experiments/constraint-ledger-stage1.md)
+- [Constraint ledger Stage 2](../reports/experiments/constraint-ledger-stage2.md)
+- [Rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md)
