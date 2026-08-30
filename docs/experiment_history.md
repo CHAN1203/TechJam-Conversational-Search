@@ -8,8 +8,11 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E21 Price Presence Prior, with public HitRate@10 `0.980`,
-> MRR `0.756899`, MTTC `2.820`, and TechnicalScore `0.880670`.
+> Current best: E22 Constraint Satisfaction on All Routes, with public
+> HitRate@10 `0.980`, MRR `0.770470`, MTTC `2.820`, and TechnicalScore
+> `0.884741`. Unlike E21 it also gains under the coverage-stress diagnostic
+> (`+0.005588`), because it is a statement about the conversation rather
+> than about catalog metadata.
 >
 > E21 was developed on `feat/hs` in parallel with E13-E20 and merged after
 > E20, so it is numbered after the branch it merged into rather than by the
@@ -17,7 +20,7 @@
 > scenario hit rate: the entire `+0.012194` is rank quality (MRR
 > `+0.040980`), which is what a tie-breaking prior is expected to buy.
 >
-> **E21 carries a documented transfer risk.** Under T25's coverage-stress
+> **E21, still a retained layer, carries a documented transfer risk.** Under T25's coverage-stress
 > diagnostic its gain reverses: `+0.012194` on the official catalog,
 > `-0.020274` when target price coverage is cut to the catalog-wide rate.
 > No other retained layer reverses. Official metrics still select methods,
@@ -74,7 +77,9 @@
 | E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | `b3e88b8` |
 | E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | Superseded by E21 | `e9dc276` |
 | E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
-| E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | **Current best** | `fe86b63` |
+| E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | Superseded by E22 | `fe86b63` |
+| E22 | Constraint satisfaction on all routes | Apply E13's completeness bonus to Browsing sessions too, at the unchanged `4.0` | 158 | **0.980** | +0.000 | **0.770470** | 2.820 | 0.8180 | **0.884741** | **+0.004071** | **Current best** | `feat/hs` |
+| E23 | Turn-recency term weighting | Scale each query term by `1 + w * (arrival_turn - 1)` | 158 | 0.980 | +0.000 | 0.754359 | 2.820 | 0.8180 | 0.879908 | -0.000762 | Reject (monotonic decline, no peak) | `feat/hs` |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -112,6 +117,8 @@
 | E19 Phrase (bigram) bonus | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
 | E20 Query-side stemming | 0.9375 | 0.9500 | 0.866667 | 0.9000 |
 | E21 Price presence prior | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
+| E22 Constraint satisfaction, all routes | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
+| E23 Turn-recency weighting | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -1215,6 +1222,91 @@ sparser metadata. Evidence:
   [E21 weight sweep](../reports/experiments/price-prior-e21.json),
   [E21 coverage-stress](../reports/experiments/coverage-stress-e21.json).
 
+### T27: Constraint satisfaction on all routes (current best)
+
+- Date: 2026-08-30.
+- Origin: a proposal to rebalance constraints against priors, in two parts --
+  make the satisfaction bonus large enough that priors cannot overturn it,
+  and weight constraints by the turn they arrived on.
+- Premise checked first: the popularity term spans `3.08` (median) to `9.73`
+  (p99) across the catalog, a spread of `6.65` against E13's
+  `COMPLETENESS_BONUS = 4.0`. The described failure is arithmetically real,
+  but only when the *completing* term lands in a cheap field -- an exact
+  match earning full title weight on every constraint wins on match score
+  alone. Both cases pinned by `PriorProofCompletenessTest`.
+- **Prior-proofing was rejected: it does nothing.** Raising the bonus to
+  `8.0` or `16.0` on the Buying route produced `+0.000000` to six decimals,
+  byte-identical output. The constructed failure never decides a session in
+  the Buying pools that actually occur.
+- The gain came from a change that was not proposed: applying the bonus to
+  **Browsing** sessions, which E13 excluded. A Browsing session opens vague
+  but discloses concrete constraints once it answers a clarification
+  question.
+
+  | Arm | Validation delta | Full delta |
+  | --- | ---: | ---: |
+  | bonus 8 / 16, Buying only | +0.000000 | +0.000000 |
+  | **all routes, bonus 4 (shipped)** | +0.003214 | **+0.004071** |
+  | all routes, bonus 16 | **+0.003339** | +0.003288 |
+  | all routes, bonus 40 | +0.003339 | +0.003288 |
+
+  Magnitude does matter stacked on route generalization, but by `+0.000125`
+  validation, saturating at 16.0 (identical at 40.0). Roughly 26:1 in favour
+  of the route change.
+- Change: `COMPLETENESS_ALL_ROUTES = True` in `starter/agent.py`, with
+  `COMPLETENESS_BONUS` unchanged at `4.0`. `bonus 4` was shipped over
+  `bonus 16` because it wins the full set (`+0.000783`) and both
+  coverage-stress measures, losing only validation by `+0.000125`.
+- New tests: 2 in `test_conversation_state.py`, including a negative control
+  that sets `completeness_all_routes = False` and asserts the opposite
+  ordering on the same Browsing session, plus 5 in `test_reranker.py`.
+  158/158 pass.
+- Result: HitRate@10 `0.980 -> 0.980`, MRR `0.756899 -> 0.770470`, MTTC
+  unchanged at `2.820`, TechnicalScore `0.880670 -> 0.884741`
+  (`+0.004071`). No scenario hit rate moves. Pure MRR, as a reordering rule
+  that never changes the candidate pool should be.
+- **Coverage-stress: holds, and helps more.** Official `+0.004071`, stress
+  `+0.005588` (validation `+0.003214` / `+0.005250`). The opposite of E21,
+  whose gain reverses under the same diagnostic. Constraint satisfaction is
+  a statement about the conversation, not about catalog metadata, so
+  degrading target metadata cannot invert it. It does not recover the 3
+  sessions E21 loses under stress; HitRate@10 stays `0.965` there.
+- Decision: **Keep. New current best.**
+- Limitations: reorders only, never rescues a missed session. The
+  `4.0`-versus-`16.0` choice rests on `+0.000783` full against `+0.000125`
+  validation and was decided on parsimony, not a decisive margin. Evidence:
+  [constraint satisfaction on all routes](../reports/experiments/constraint-satisfaction-routing.md),
+  [sweep](../reports/experiments/constraint-rebalance.json),
+  [E22 dual-catalog run](../reports/experiments/constraint-satisfaction-routing.json).
+
+### T28: Turn-recency term weighting (rejected, monotonic)
+
+- Date: 2026-08-30.
+- Hypothesis: later answers are more specific than the opening category, so
+  a term that arrived on turn 4 should outweigh one from turn 1.
+- Change: `term_weights` on `rerank_candidates`, scaling each term by
+  `1 + recency_weight * (arrival_turn - 1)`. The agent records the first
+  turn each surviving term entered the query, rebuilt against
+  `unique_terms` every turn so an override that drops a term also drops its
+  arrival record.
+
+  | `recency_weight` | Validation delta | Full delta | HitRate@10 |
+  | ---: | ---: | ---: | ---: |
+  | 0.1 | -0.000217 | -0.000762 | 0.980 |
+  | 0.25 | -0.003244 | -0.005046 | 0.980 |
+  | 0.5 | -0.016098 | -0.015506 | 0.970 |
+  | 1.0 | -0.026436 | -0.031340 | 0.960 |
+
+- Mechanism traced: retrieval is an accumulating OR query, so the opening
+  category term is what holds the candidate pool on-topic. Down-weighting it
+  relative to later details widens the pool rather than sharpening it, which
+  is why HitRate falls from `0.5` upward.
+- Also negative under coverage-stress (`-0.001824` full), and combining it
+  with E22 was worse than E22 alone (`+0.002876` full against `+0.004071`).
+- Decision: **Reject.** No peak and no plateau -- a clean monotonic decline
+  on both splits. Code path retained at `RECENCY_WEIGHT = 0.0` for ablation,
+  as with `RATING_WEIGHT` and the `entropy` clarification policy.
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -1225,7 +1317,7 @@ sparser metadata. Evidence:
   | `test_catalog_variants.py` | 5 | Official/stress/dual mode resolution and rebuild-on-stale |
   | `test_clarification.py` | 3 | Fixed/profile difference, candidate grounded-attribute selection, and `other` probe |
   | `test_clarification_ablation.py` | 2 | Multiple policies and splits on the real FTS5 evaluator |
-  | `test_conversation_state.py` | 40 | Accumulation, negation, slot-aware override, routing, fallback behavior, policy selection and default |
+  | `test_conversation_state.py` | 42 | Accumulation, negation, slot-aware override, routing, fallback behavior, policy selection and default |
   | `test_coverage_stress.py` | 11 | Deterministic masking, invariants, atomic writes, path-collision rejection |
   | `test_dense.py` | 11 | TF-IDF + SVD index build, projection, and search |
   | `test_dual_catalog_evaluation.py` | 2 | Official/stress/delta payload shape |
@@ -1234,10 +1326,10 @@ sparser metadata. Evidence:
   | `test_experiment_split.py` | 1 | Fixed split size, stratification, and no dev/validation overlap |
   | `test_gazetteer.py` | 16 | Vocabulary mining, normalization, coverage, and one-slot precedence |
   | `test_popularity_sweep.py` | 2 | Weight/split/difficulty rows and dual-catalog deltas |
-  | `test_reranker.py` | 24 | Complete-constraint priority, BM25 tie order, catalog IDF, popularity, price, rating, semantic, and phrase terms |
+  | `test_reranker.py` | 29 | Complete-constraint priority, BM25 tie order, catalog IDF, popularity, price, rating, semantic, and phrase terms |
   | `test_session_viewer.py` | 9 | Transcript recording and viewer server |
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
-  | **Total** | **143** | Current full regression suite |
+  | **Total** | **158** | Current full regression suite |
 
   Run the full tests:
 
@@ -1307,4 +1399,5 @@ sparser metadata. Evidence:
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
 - [Popularity prior](../reports/experiments/popularity-prior.md)
 - [Price and rating priors](../reports/experiments/price-rating-prior.md)
+- [Constraint satisfaction on all routes](../reports/experiments/constraint-satisfaction-routing.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)
