@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "primary_catalog": "official",
+  "catalogs": {
+    "official": {
+      "sample_count": 200,
+      "hit_rate_at_10": 0.98,
+      "mrr": 0.715919,
+      "mttc": 2.815,
+      "efficiency": 0.8185,
+      "recommended_technical_score": 0.868476,
+      "reported_token_usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      },
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.9,
+          "mrr": 0.618333,
+          "mttc": 3.6
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 1.0,
+          "mrr": 0.693323,
+          "mttc": 2.7125
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9875,
+          "mrr": 0.773695,
+          "mttc": 2.025
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.933333,
+          "mrr": 0.65463,
+          "mttc": 4.933333
+        }
+      }
+    },
+    "coverage_stress": {
+      "sample_count": 200,
+      "hit_rate_at_10": 0.98,
+      "mrr": 0.730494,
+      "mttc": 2.765,
+      "efficiency": 0.8235,
+      "recommended_technical_score": 0.873848,
+      "reported_token_usage": {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+      },
+      "scenario_metrics": {
+        "boundary": {
+          "sample_count": 10,
+          "hit_rate_at_10": 0.9,
+          "mrr": 0.733333,
+          "mttc": 3.2
+        },
+        "browsing": {
+          "sample_count": 80,
+          "hit_rate_at_10": 1.0,
+          "mrr": 0.702401,
+          "mttc": 2.65
+        },
+        "buying": {
+          "sample_count": 80,
+          "hit_rate_at_10": 0.9875,
+          "mrr": 0.77557,
+          "mttc": 2.0125
+        },
+        "intent_override": {
+          "sample_count": 30,
+          "hit_rate_at_10": 0.933333,
+          "mrr": 0.684259,
+          "mttc": 4.933333
+        }
+      }
+    }
+  },
+  "deltas": {
+    "direction": "coverage_stress_minus_official",
+    "overall": {
+      "hit_rate_at_10": 0.0,
+      "mrr": 0.014575,
+      "mttc": -0.05,
+      "efficiency": 0.005,
+      "recommended_technical_score": 0.005372
+    },
+    "scenario_metrics": {
+      "boundary": {
+        "hit_rate_at_10": 0.0,
+        "mrr": 0.115,
+        "mttc": -0.4
+      },
+      "browsing": {
+        "hit_rate_at_10": 0.0,
+        "mrr": 0.009078,
+        "mttc": -0.0625
+      },
+      "buying": {
+        "hit_rate_at_10": 0.0,
+        "mrr": 0.001875,
+        "mttc": -0.0125
+      },
+      "intent_override": {
+        "hit_rate_at_10": 0.0,
+        "mrr": 0.029629,
+        "mttc": 0.0
+      }
+    }
+  },
+  "stress_manifest": {
+    "schema_version": 1,
+    "algorithm_version": "coverage-stress-v1",
+    "seed": "techjam-coverage-stress-v1",
+    "field_order": [
+      "title",
+      "features",
+      "description",
+      "price",
+      "categories",
+      "details",
+      "average_rating",
+      "rating_number",
+      "store"
+    ],
+    "source_catalog": "data/catalog.jsonl",
+    "dataset": "data/public_set.jsonl",
+    "output_catalog": "data/generated/catalog-coverage-stress.jsonl",
+    "source_catalog_sha256": "da979b05a68af864cb0dcf9ee6a81c010c7e66a57978ad286c7a2e005fc69a67",
+    "dataset_sha256": "571359a8a69014c43fc30d39c996c4a28e875dccc249dffc707358757beb16c0",
+    "output_catalog_sha256": "f0a1e6381f613409fee279db7d25f6b7603e46f6952b2ae7f3c10635447630a5",
+    "catalog_row_count": 50000,
+    "session_count": 200,
+    "distinct_target_count": 200,
+    "matched_target_count": 200,
+    "fields": {
+      "title": {
+        "catalog_present": 49998,
+        "catalog_coverage": 0.99996,
+        "desired_target_present": 200,
+        "original_target_present": 200,
+        "masked_count": 0,
+        "stress_target_present": 200,
+        "unfillable_shortfall": 0
+      },
+      "features": {
+        "catalog_present": 44781,
+        "catalog_coverage": 0.89562,
+        "desired_target_present": 179,
+        "original_target_present": 200,
+        "masked_count": 21,
+        "stress_target_present": 179,
+        "unfillable_shortfall": 0
+      },
+      "description": {
+        "catalog_present": 26113,
+        "catalog_coverage": 0.52226,
+        "desired_target_present": 104,
+        "original_target_present": 89,
+        "masked_count": 0,
+        "stress_target_present": 89,
+        "unfillable_shortfall": 15
+      },
+      "price": {
+        "catalog_present": 10527,
+        "catalog_coverage": 0.21054,
+        "desired_target_present": 42,
+        "original_target_present": 178,
+        "masked_count": 136,
+        "stress_target_present": 42,
+        "unfillable_shortfall": 0
+      },
+      "categories": {
+        "catalog_present": 50000,
+        "catalog_coverage": 1.0,
+        "desired_target_present": 200,
+        "original_target_present": 200,
+        "masked_count": 0,
+        "stress_target_present": 200,
+        "unfillable_shortfall": 0
+      },
+      "details": {
+        "catalog_present": 48330,
+        "catalog_coverage": 0.9666,
+        "desired_target_present": 193,
+        "original_target_present": 200,
+        "masked_count": 7,
+        "stress_target_present": 193,
+        "unfillable_shortfall": 0
+      },
+      "average_rating": {
+        "catalog_present": 50000,
+        "catalog_coverage": 1.0,
+        "desired_target_present": 200,
+        "original_target_present": 200,
+        "masked_count": 0,
+        "stress_target_present": 200,
+        "unfillable_shortfall": 0
+      },
+      "rating_number": {
+        "catalog_present": 50000,
+        "catalog_coverage": 1.0,
+        "desired_target_present": 200,
+        "original_target_present": 200,
+        "masked_count": 0,
+        "stress_target_present": 200,
+        "unfillable_shortfall": 0
+      },
+      "store": {
+        "catalog_present": 49686,
+        "catalog_coverage": 0.99372,
+        "desired_target_present": 199,
+        "original_target_present": 200,
+        "masked_count": 1,
+        "stress_target_present": 199,
+        "unfillable_shortfall": 0
+      }
+    },
+    "invariants": {
+      "ordered_identifiers_preserved": true,
+      "non_targets_preserved": true,
+      "no_fields_filled": true,
+      "planned_counts_matched": true
+    }
+  }
+}

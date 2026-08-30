@@ -348,3 +348,170 @@ class OverrideRetainsAnsweredConstraintsTest(ConversationStateTest):
             [{"parent_asin": "BLUE-COTTON"}],
             response["recommendations"],
         )
+
+
+class BuyingBrowsingRoutingTest(ConversationStateTest):
+    """A Buying customer discloses a concrete constraint on the opening turn
+    (docs/competition_specification.md); a Browsing customer starts vague.
+    The session is classified once, from the opening message only, and that
+    classification is used for the rest of the conversation.
+    """
+
+    def test_opening_constraint_routes_the_session_as_buying(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"black": 1}},
+        )
+        agent.respond("session", "I want a black shirt", 1, 1)
+        self.assertEqual("buying", agent._session_route["session"])
+
+    def test_vague_opening_message_routes_the_session_as_browsing(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"black": 1}},
+        )
+        agent.respond("session", "I want a shirt, still exploring", 1, 1)
+        self.assertEqual("browsing", agent._session_route["session"])
+
+    def test_route_is_frozen_after_the_opening_turn(self) -> None:
+        agent = self.build_agent(
+            [],
+            gazetteer={"category": {"shirt": 1}, "color": {"black": 1}},
+        )
+        agent.respond("session", "I want a shirt, still exploring", 1, 1)
+        agent.respond("session", "black please", 2, 1)
+        self.assertEqual("browsing", agent._session_route["session"])
+
+    def test_buying_route_prefers_the_candidate_matching_every_constraint(self) -> None:
+        # MORE-HITS turns up via extra, unrelated feature words but is missing
+        # the color the customer actually asked for; ALL-MATCH satisfies every
+        # disclosed constraint. Only the Buying route should reward that.
+        agent = self.build_agent(
+            [
+                {
+                    "parent_asin": "ALL-MATCH",
+                    "title": "Black Leather Belt",
+                    "categories": "Belts", "features": "", "details": {},
+                    "store": "Example", "description": [],
+                },
+                {
+                    "parent_asin": "MORE-HITS",
+                    "title": "Leather Belt",
+                    "categories": "Belts",
+                    "features": "everyday casual outdoor accessory gift",
+                    "details": {}, "store": "Example", "description": [],
+                },
+            ],
+            gazetteer={"category": {"belt": 2}, "color": {"black": 1}, "material": {"leather": 1}},
+        )
+
+        response = agent.respond(
+            "session",
+            "I want a black leather belt, something everyday casual outdoor",
+            1,
+            2,
+        )
+
+        self.assertEqual(
+            [{"parent_asin": "ALL-MATCH"}, {"parent_asin": "MORE-HITS"}],
+            response["recommendations"],
+        )
+
+
+class DenseRetrievalModeTest(ConversationStateTest):
+    def test_dense_mode_finds_a_semantically_close_product_with_no_exact_word_overlap(self) -> None:
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        products = [
+            {
+                "parent_asin": "SNEAKER",
+                "title": "Athletic sneaker jogging trainer footwear",
+                "categories": "Shoes", "features": "running shoe", "details": {},
+                "store": "Example", "description": [],
+            },
+            {
+                "parent_asin": "HAT",
+                "title": "Wide brim sun hat headwear",
+                "categories": "Accessories", "features": "sun protection", "details": {},
+                "store": "Example", "description": [],
+            },
+        ]
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in products), encoding="utf-8"
+        )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text("{}", encoding="utf-8")
+
+        agent = Agent(catalog_path, gazetteer_path=gazetteer_path, retrieval_mode="dense")
+        agent.reset("session", {})
+        response = agent.respond("session", "shoe jogging trainer", 1, 1)
+
+        self.assertEqual([{"parent_asin": "SNEAKER"}], response["recommendations"])
+
+    def test_bm25_mode_is_unaffected_by_the_new_constructor_argument(self) -> None:
+        agent = self.build_agent([
+            {
+                "parent_asin": "SHIRT",
+                "title": "Red Shirt",
+                "categories": "Shirts", "features": "", "details": {},
+                "store": "Example", "description": [],
+            },
+        ])
+        response = agent.respond("session", "red shirt", 1, 1)
+        self.assertEqual([{"parent_asin": "SHIRT"}], response["recommendations"])
+
+
+class SemanticRerankingModeTest(ConversationStateTest):
+    def test_explicit_zero_semantic_weight_reproduces_pre_semantic_behavior(self) -> None:
+        # semantic_weight now defaults to SEMANTIC_WEIGHT (1.0), not 0 -- this
+        # confirms opting out (semantic_weight=0.0) still behaves as it did
+        # before this experiment, not that the default is unaffected.
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        products = [
+            {
+                "parent_asin": "SHIRT",
+                "title": "Red Shirt",
+                "categories": "Shirts", "features": "", "details": {},
+                "store": "Example", "description": [],
+            },
+        ]
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in products), encoding="utf-8"
+        )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text("{}", encoding="utf-8")
+        agent = Agent(catalog_path, gazetteer_path=gazetteer_path, semantic_weight=0.0)
+        agent.reset("session", {})
+        response = agent.respond("session", "red shirt", 1, 1)
+        self.assertEqual([{"parent_asin": "SHIRT"}], response["recommendations"])
+
+    def test_nonzero_semantic_weight_does_not_crash_and_still_finds_the_match(self) -> None:
+        base = Path(self.temporary_directory.name)
+        catalog_path = base / "catalog.jsonl"
+        products = [
+            {
+                "parent_asin": "SHIRT",
+                "title": "Red Shirt",
+                "categories": "Shirts", "features": "cotton", "details": {},
+                "store": "Example", "description": [],
+            },
+            {
+                "parent_asin": "JACKET",
+                "title": "Blue Jacket",
+                "categories": "Jackets", "features": "wool", "details": {},
+                "store": "Example", "description": [],
+            },
+        ]
+        catalog_path.write_text(
+            "".join(json.dumps(p) + "\n" for p in products), encoding="utf-8"
+        )
+        gazetteer_path = base / "gazetteer.json"
+        gazetteer_path.write_text("{}", encoding="utf-8")
+
+        agent = Agent(catalog_path, gazetteer_path=gazetteer_path, semantic_weight=0.5)
+        agent.reset("session", {})
+        response = agent.respond("session", "red shirt", 1, 2)
+
+        asins = [item["parent_asin"] for item in response["recommendations"]]
+        self.assertIn("SHIRT", asins)

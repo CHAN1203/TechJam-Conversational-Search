@@ -7,8 +7,9 @@ import sqlite3
 from pathlib import Path
 
 from starter.clarification import select_attribute
+from starter.dense import DenseIndex
 from starter.slots import extract_slots
-from starter.reranker import rerank_candidates
+from starter.reranker import extract_bigrams, rerank_candidates
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
@@ -37,6 +38,15 @@ PRICE_WEIGHT = 2.0
 # Star rating. Much weaker than the review count and largely explained by it;
 # swept separately so the data decides whether it earns any weight at all.
 RATING_WEIGHT = 0.0
+# Reasoned choice from a 3-point triangulation (0.5, 1.0, 2.0), not a full
+# validation-split sweep -- see reports/experiments/semantic-reranking.md.
+# 1.0 improved TechnicalScore with zero sessions flipping hit/miss; 2.0
+# regressed. A fuller sweep is a reasonable next step, not done here.
+SEMANTIC_WEIGHT = 1.0
+# Triangulated (0.5, 1.0, 2.0), not a full validation-split sweep -- see
+# reports/experiments/phrase-bonus.md. 1.0 was the peak: TechnicalScore
+# 0.849882 -> 0.868476, 2 sessions recovered, 0 lost.
+PHRASE_WEIGHT = 1.0
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -85,6 +95,22 @@ def _is_intent_override(message: str) -> bool:
     return lowered.startswith("actually") and "ignore my earlier preference" in lowered
 
 
+# One title-weight unit (FIELD_WEIGHTS["title"] in starter/reranker.py). Large
+# enough to outweigh a handful of cheap, single-field matches elsewhere, small
+# enough that a candidate missing several field-weighted terms cannot win on
+# completeness alone.
+COMPLETENESS_BONUS = 4.0
+
+
+def _classify_route(message_slots: dict[str, list[str]]) -> str:
+    """Buying discloses a concrete constraint on the opening turn; Browsing
+    starts vague (docs/competition_specification.md). Category/department
+    describe the item itself, not a preference, so they don't count."""
+    if any(slot not in DURABLE_SLOTS for slot in message_slots):
+        return "buying"
+    return "browsing"
+
+
 def _load_gazetteer(path: str | Path) -> dict[str, dict[str, int]]:
     """Load the mined slot vocabularies, degrading to lexical-only behaviour.
 
@@ -117,21 +143,31 @@ class Agent:
         popularity_weight: float = POPULARITY_WEIGHT,
         price_weight: float = PRICE_WEIGHT,
         rating_weight: float = RATING_WEIGHT,
+        retrieval_mode: str = "bm25",
+        semantic_weight: float = SEMANTIC_WEIGHT,
+        phrase_weight: float = PHRASE_WEIGHT,
     ) -> None:
+        self.phrase_weight = phrase_weight
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.popularity_weight = popularity_weight
         self.price_weight = price_weight
         self.rating_weight = rating_weight
+        self.retrieval_mode = retrieval_mode
+        self.semantic_weight = semantic_weight
         self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
         self._session_terms: dict[str, list[str]] = {}
         self._session_profiles: dict[str, dict] = {}
         self._session_asked_attributes: dict[str, set[str]] = {}
         self._session_slots: dict[str, dict[str, dict[str, int]]] = {}
+        self._session_route: dict[str, str] = {}
         self._build_index()
 
     def _build_index(self) -> None:
+        # Needed either as a retrieval route (E16/E17) or purely to score
+        # candidates that BM25 already retrieved (semantic reranking).
+        self._needs_dense_index = self.retrieval_mode in ("dense", "rrf") or self.semantic_weight != 0.0
         cursor = self.connection.cursor()
         cursor.execute(
             "CREATE VIRTUAL TABLE products USING fts5("
@@ -145,35 +181,48 @@ class Agent:
         self._popularity: dict[str, float] = {}
         self._has_price: dict[str, bool] = {}
         self._average_rating: dict[str, float] = {}
+        self._products: dict[str, dict] = {}
+        dense_asins: list[str] = []
+        dense_texts: list[str] = []
         with self.catalog_path.open(encoding="utf-8") as handle:
             for line in handle:
                 product = json.loads(line)
+                parent_asin = str(product["parent_asin"])
                 try:
-                    self._popularity[str(product["parent_asin"])] = float(
-                        product.get("rating_number") or 0.0
-                    )
+                    self._popularity[parent_asin] = float(product.get("rating_number") or 0.0)
                 except (TypeError, ValueError):
-                    self._popularity[str(product["parent_asin"])] = 0.0
-                self._has_price[str(product["parent_asin"])] = (
-                    product.get("price") not in (None, "")
-                )
+                    self._popularity[parent_asin] = 0.0
+                self._has_price[parent_asin] = product.get("price") not in (None, "")
                 try:
-                    self._average_rating[str(product["parent_asin"])] = float(
+                    self._average_rating[parent_asin] = float(
                         product.get("average_rating") or 0.0
                     )
                 except (TypeError, ValueError):
-                    self._average_rating[str(product["parent_asin"])] = 0.0
-                batch.append(
-                    (
-                        str(product["parent_asin"]),
-                        _text(product.get("title")),
-                        _text(product.get("categories")),
-                        _text(product.get("features")),
-                        _text(product.get("details")),
-                        _text(product.get("store")),
-                        _text(product.get("description")),
-                    )
+                    self._average_rating[parent_asin] = 0.0
+                fields = (
+                    _text(product.get("title")),
+                    _text(product.get("categories")),
+                    _text(product.get("features")),
+                    _text(product.get("details")),
+                    _text(product.get("store")),
+                    _text(product.get("description")),
                 )
+                batch.append((parent_asin, *fields))
+                self._products[parent_asin] = {
+                    "parent_asin": parent_asin,
+                    "title": fields[0],
+                    "categories": fields[1],
+                    "features": fields[2],
+                    "details": fields[3],
+                    "store": fields[4],
+                    "description": fields[5],
+                    "rating_number": self._popularity[parent_asin],
+                    "has_price": self._has_price[parent_asin],
+                    "average_rating": self._average_rating[parent_asin],
+                }
+                if self._needs_dense_index:
+                    dense_asins.append(parent_asin)
+                    dense_texts.append(" ".join(fields))
                 if len(batch) >= 1000:
                     cursor.executemany("INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?)", batch)
                     batch.clear()
@@ -183,6 +232,7 @@ class Agent:
         self.document_count = self.connection.execute(
             "SELECT count(*) FROM products"
         ).fetchone()[0]
+        self.dense_index = DenseIndex(dense_asins, dense_texts) if self._needs_dense_index else None
 
     def _catalog_idf(self, terms: list[str]) -> dict[str, float]:
         """Weight each query term by how rare it is across the whole catalog.
@@ -213,6 +263,7 @@ class Agent:
         self._session_profiles[session_id] = user_profile
         self._session_asked_attributes[session_id] = set()
         self._session_slots[session_id] = {}
+        self._session_route.pop(session_id, None)
 
     def respond(
         self,
@@ -226,6 +277,8 @@ class Agent:
         current_terms = _constraint_terms(user_message)
         message_slots = extract_slots(user_message, self.gazetteer)
         accumulated_slots = self._session_slots.get(session_id, {})
+        if session_id not in self._session_route:
+            self._session_route[session_id] = _classify_route(message_slots)
         if _is_intent_override(user_message):
             # "Ignore my earlier preference" revokes what the customer
             # volunteered on the opening turn. It does not revoke the answers
@@ -258,10 +311,31 @@ class Agent:
         self._session_slots[session_id] = accumulated_slots
         unique_terms = list(dict.fromkeys([*previous_terms, *current_terms]))[:40]
         self._session_terms[session_id] = unique_terms
+        required_terms: set[str] = set()
+        if self._session_route[session_id] == "buying":
+            # Read off the same slot memory the override logic already
+            # maintains; intersect with this turn's actual query terms so a
+            # normalization difference (e.g. gazetteer singularization) can
+            # never ask the reranker to require a term that isn't there.
+            slot_terms = {
+                token
+                for slot, terms in accumulated_slots.items()
+                if slot not in DURABLE_SLOTS
+                for term in terms
+                for token in _terms(term)
+            }
+            required_terms = slot_terms & set(unique_terms)
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
-        if not expression:
-            candidates: list[dict] = []
-            recommendations: list[dict] = []
+        query_text = " ".join(unique_terms)
+        if self.retrieval_mode == "dense":
+            # Isolated comparison only: replaces BM25 candidates entirely so
+            # dense retrieval's own recall can be measured on its own,
+            # before any fusion with BM25 (see reports/experiments/dense-retrieval.md).
+            pool_size = max(top_k, CANDIDATE_POOL_SIZE)
+            dense_hits = self.dense_index.search(query_text, pool_size) if self.dense_index else []
+            candidates = [self._products[asin] for asin in dense_hits if asin in self._products]
+        elif not expression:
+            candidates = []
         else:
             rows = self.connection.execute(
                 "SELECT parent_asin, title, categories, features, details, store, description "
@@ -284,6 +358,18 @@ class Agent:
                 }
                 for row in rows
             ]
+        if not candidates:
+            recommendations: list[dict] = []
+        else:
+            semantic_scores: dict[str, float] = {}
+            if self.semantic_weight != 0.0 and self.dense_index is not None:
+                query_vector = self.dense_index.project(query_text)
+                if query_vector is not None:
+                    for candidate in candidates:
+                        asin = str(candidate["parent_asin"])
+                        doc_vector = self.dense_index.vector_for(asin)
+                        if doc_vector is not None:
+                            semantic_scores[asin] = float(query_vector @ doc_vector)
             recommendations = [
                 {"parent_asin": parent_asin}
                 for parent_asin in rerank_candidates(
@@ -293,6 +379,12 @@ class Agent:
                     popularity_weight=self.popularity_weight,
                     price_weight=self.price_weight,
                     rating_weight=self.rating_weight,
+                    required_terms=required_terms,
+                    completeness_bonus=COMPLETENESS_BONUS,
+                    semantic_scores=semantic_scores,
+                    semantic_weight=self.semantic_weight,
+                    phrase_terms=extract_bigrams(user_message),
+                    phrase_weight=self.phrase_weight,
                 )
             ]
         asked = self._session_asked_attributes[session_id]
