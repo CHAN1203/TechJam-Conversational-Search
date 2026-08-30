@@ -41,6 +41,11 @@ OPENING_TURN = 1
 # Kept small enough that a better constraint match still outranks mere
 # popularity; it separates candidates that would otherwise tie.
 POPULARITY_WEIGHT = 1.2
+# One field-weight unit against match scores of 7 to 30, so a product the
+# customer has already declined is nudged down but a clearly better match still
+# outranks a merely newer one. Larger values score higher and stop being an
+# ordering; see reports/experiments/implicit-rejection-reranking.md.
+REJECTION_WEIGHT = 1.0
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -123,11 +128,11 @@ class Agent:
         clarification_policy: str = "candidate",
         gazetteer_path: str | Path = "data/gazetteer.json",
         popularity_weight: float = POPULARITY_WEIGHT,
-        state_model: str = "slots",
+        state_model: str = "ledger",
         answered_weight: float = 1.0,
         decay_lambda: float = 0.0,
-        no_gain_probe: int | None = None,
-        rejection_weight: float = 0.0,
+        no_gain_probe: int | None = 1,
+        rejection_weight: float = REJECTION_WEIGHT,
     ) -> None:
         if state_model not in STATE_MODELS:
             raise ValueError(f"unsupported state model: {state_model}")

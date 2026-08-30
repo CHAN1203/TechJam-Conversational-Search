@@ -28,9 +28,10 @@ a cell in the turn ribbon or an exchange in the conversation jumps to it.
 ## Which agent it runs
 
 `SessionRunner` constructs `Agent(catalog_path)` with no overrides, so the
-viewer always runs whatever the current defaults are — today that is E9, the
-best entry in `docs/experiment_history.md` (candidate clarification policy,
-candidate pool 100, no IDF, cleaned gazetteer). Change the defaults and the
+viewer always runs whatever the current defaults are — today that is E16, the
+best entry in `docs/experiment_history.md` (constraint ledger, information-gain
+probe at threshold 1, implicit-rejection weight 1.0, candidate clarification
+policy, candidate pool 100, no IDF, cleaned gazetteer). Change the defaults and the
 viewer follows without any edit here.
 
 The header shows the live configuration so you can confirm what ran.

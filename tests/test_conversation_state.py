@@ -178,6 +178,11 @@ class ConversationStateTest(AgentFixture, unittest.TestCase):
             profile={"preference_tags": ["material", "fit"]},
             clarification_policy="profile",
         )
+        # The policy is only consulted while the conversation is still
+        # yielding. A turn that adds nothing hands question selection to the
+        # information-gain probe instead, which is what the second message here
+        # would otherwise trigger.
+        agent.no_gain_probe = None
 
         first = agent.respond("session", "I want a shirt", 1, 1)
         second = agent.respond(

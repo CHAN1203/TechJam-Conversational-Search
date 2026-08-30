@@ -161,8 +161,24 @@ class AgentStateModelTest(AgentFixture, unittest.TestCase):
     ]
     GAZETTEER = {"category": {"belt": 2}, "material": {"leather": 1, "canvas": 1}}
 
-    def test_the_default_state_model_is_the_retained_one(self) -> None:
-        self.assertEqual("slots", self.build_agent(self.CATALOG).state_model)
+    def test_the_defaults_are_the_retained_configuration(self) -> None:
+        # The organizer runs Agent(catalog_path) with no arguments, so whatever
+        # the constructor defaults to is what gets scored.
+        agent = self.build_agent(self.CATALOG)
+
+        self.assertEqual("ledger", agent.state_model)
+        self.assertEqual(1, agent.no_gain_probe)
+        self.assertEqual(1.0, agent.rejection_weight)
+
+    def test_e11_remains_reproducible_from_explicit_flags(self) -> None:
+        agent = self.build_agent(self.CATALOG)
+        agent.state_model, agent.no_gain_probe, agent.rejection_weight = "slots", None, 0.0
+        agent.reset("session", {})
+
+        response = agent.respond("session", "I want a leather belt", 1, 2)
+
+        self.assertEqual("slots", agent.state_model)
+        self.assertTrue(response["recommendations"])
 
     def test_an_unsupported_state_model_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
@@ -221,8 +237,8 @@ class InformationGainProbeTest(AgentFixture, unittest.TestCase):
         agent.reset("session", {})
         return agent
 
-    def test_the_probe_is_off_by_default(self) -> None:
-        self.assertIsNone(self.build_agent(self.CATALOG).no_gain_probe)
+    def test_the_probe_is_on_by_default_at_threshold_one(self) -> None:
+        self.assertEqual(1, self.build_agent(self.CATALOG).no_gain_probe)
 
     def test_a_reply_carrying_no_new_constraint_triggers_an_open_question(self) -> None:
         agent = self._agent(state_model="ledger", no_gain_probe=1)
@@ -332,8 +348,10 @@ class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
         agent.reset("session", {})
         return agent
 
-    def test_the_penalty_is_off_by_default(self) -> None:
-        self.assertEqual(0.0, self.build_agent(self.CATALOG).rejection_weight)
+    def test_the_default_penalty_stays_inside_the_defensible_range(self) -> None:
+        # Large weights score higher and stop being an ordering; see
+        # test_relevance_still_outranks_novelty.
+        self.assertEqual(1.0, self.build_agent(self.CATALOG).rejection_weight)
 
     def test_shown_products_are_recorded(self) -> None:
         agent = self._agent(state_model="ledger")

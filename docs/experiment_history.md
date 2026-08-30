@@ -10,9 +10,12 @@
 
 > Current best: E16 Implicit-Rejection Reranking, with public HitRate@10
 > `0.995`, MRR `0.694964`, MTTC `2.465`, and TechnicalScore `0.876689`.
-> Recommended configuration:
-> `Agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)`.
-> The weight is deliberately not the highest-scoring one; see T22. Constructor defaults remain
+> This is now the **constructor default**, because the organizer runs
+> `Agent(catalog_path)` with no further arguments: `python -m
+> evaluator.local_evaluator` reproduces `0.876689` with no flags. E11 is still
+> reachable explicitly as
+> `Agent(state_model="slots", no_gain_probe=None, rejection_weight=0.0)`.
+> The rejection weight is deliberately not the highest-scoring value; see T22. Constructor defaults remain
 > `state_model="slots"` and `no_gain_probe=None`, so an unflagged `Agent()`
 > still reproduces E11 at `0.841838`.
 
