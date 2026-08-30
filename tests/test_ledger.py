@@ -438,6 +438,26 @@ class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
         self.assertEqual(1.0, seen[1]["STRONG-SHOWN"])
         self.assertEqual(2, agent._session_shown["session"]["STRONG-SHOWN"])
 
+    def test_a_persistently_stuck_agent_never_repeats_a_question(self) -> None:
+        """E17 measured the alternative and this is why it was rejected.
+
+        Routing this branch through the clarification policy, with the asked
+        set dropped so it may repeat, returns the same attribute every turn:
+        which attribute best separates the candidates is stable even as the
+        rejection penalty shuffles individual products. Round-robin coverage is
+        what keeps a stuck conversation from asking one dead question forever.
+        """
+        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent.respond("session", "I want a leather belt", 1, 2)
+        asked = [
+            agent.respond("session", f"I don't have an additional preference for x{i}.", i + 2, 2)[
+                "ask_attribute"
+            ]
+            for i in range(6)
+        ]
+
+        self.assertEqual(len(asked), len(set(asked)))
+
     def test_a_stuck_agent_keeps_asking_instead_of_repeating_other(self) -> None:
         # "other" being a strict superset of every named attribute is a property
         # of this simulator, not of shoppers. The agent must not conclude from

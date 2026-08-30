@@ -411,6 +411,13 @@ class Agent:
             # different attribute may remember something; only this simulator
             # answers "other" as a strict superset of every named attribute.
             stuck_for = self._session_no_gain[session_id] - self.no_gain_probe
+            # Round-robin rather than the clarification policy. Routing this
+            # branch back through `select_attribute` was measured (E17): with
+            # the asked set dropped so it may repeat, it returns the same
+            # attribute every turn, because which attribute best separates the
+            # candidates is stable even as the rejection penalty shuffles
+            # individual products. That reintroduces the repetition this branch
+            # exists to avoid. The cycle guarantees coverage instead.
             ask_attribute = (
                 "other" if stuck_for == 0
                 else DEFAULT_ATTRIBUTE_ORDER[

@@ -55,6 +55,7 @@
 | E14-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
 | E15 | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
 | E16 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | **Current best** | See branch |
+| E17 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -785,6 +786,39 @@
   unreachable at pool position 187. The penalty counts showings, not positions.
 - Evidence: [implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md).
 
+### T23: Stuck-path clarification policy (rejected on behaviour, not score)
+
+- Date: 2026-08-30
+- Question: when the information-gain counter says the conversation is stuck,
+  the agent bypasses `select_attribute` entirely and round-robins over
+  `DEFAULT_ATTRIBUTE_ORDER`. That was the crudest decision in E16 and it was
+  never tested. Routing the branch back through the candidate-aware policy,
+  with the asked set dropped so it may repeat, should in principle pick a
+  better question than blind rotation.
+- Result: identical in every digit -- TechnicalScore `0.876689`, HitRate@10
+  `0.995`, every scenario unchanged.
+- Why it cannot be measured here: across 200 sessions and 492 turns, the branch
+  fires 10 times in 2 sessions (`2.0%`). 404 turns (`82.1%`) take the normal
+  Layer-4 path and 78 (`15.9%`) are the first stuck turn, which asks `other`
+  under both variants. Of the two affected sessions, `public_0020` is
+  unreachable at pool position 187 and `public_0179` hits either way. E16 had
+  already all but eliminated the persistently-stuck state: before it, four
+  sessions were stuck for six turns each.
+- Decided on behaviour instead. Under the policy variant a stuck agent asks the
+  **same attribute every turn** -- `public_0020` asks `color` five times,
+  `public_0179` asks `material` five times -- because which attribute best
+  separates the candidates is stable even as the rejection penalty shuffles
+  individual products. That reintroduces, in a new form, the repetition the
+  branch exists to avoid. Round-robin varies genuinely: `material, size, style,
+  feature, use_case`.
+- Decision: reject. The `stuck_clarification` parameter was removed; round-robin
+  stays and now carries the reasoning in a comment. Adds
+  `test_a_persistently_stuck_agent_never_repeats_a_question`, which locks the
+  property that decided it.
+- Value: this converts a crude fallback into an evidenced one. The round-robin
+  is not laziness; it is the only variant tested that guarantees a stuck
+  conversation stops asking one dead question.
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -803,7 +837,7 @@
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
   | `test_ledger.py` | 27 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, weights, probe thresholds, slot/ledger equivalence |
 | `test_session_trace.py` | 13 | Override keep/drop classification, normalization loss, dead-turn detection, trace/evaluator agreement |
-| **Total** | **133** | Current full regression suite |
+| **Total** | **137** | Current full regression suite |
 
 The per-module counts for the older modules have drifted as experiments were
 added. The authoritative number is whatever `python -m unittest discover -s
