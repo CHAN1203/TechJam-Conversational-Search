@@ -28,6 +28,17 @@ def _popularity(candidate: Mapping[str, object]) -> float:
     return math.log1p(max(count, 0.0))
 
 
+def _average_rating(candidate: Mapping[str, object]) -> float:
+    try:
+        return float(candidate.get("average_rating") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _has_price(candidate: Mapping[str, object]) -> float:
+    return 1.0 if candidate.get("has_price") else 0.0
+
+
 def extract_bigrams(text: str) -> list[str]:
     """Consecutive word pairs, lowercased, from one piece of text -- a
     phrase relationship is a property of adjacency within a single
@@ -72,6 +83,8 @@ def rerank_candidates(
     top_k: int,
     idf: Mapping[str, float] | None = None,
     popularity_weight: float = 0.0,
+    price_weight: float = 0.0,
+    rating_weight: float = 0.0,
     required_terms: Sequence[str] | None = None,
     completeness_bonus: float = 0.0,
     semantic_scores: Mapping[str, float] | None = None,
@@ -92,6 +105,21 @@ def rerank_candidates(
     median target carries 6,846 ratings against a catalog median of 12. The
     weight is kept small enough that a better constraint match still wins, so
     the prior separates candidates that are otherwise tied.
+
+    `price_weight` scales a flat bonus for carrying a price at all. 89% of
+    public targets have one against 21% of the catalog, and the gap survives
+    controlling for popularity: within the catalog's top popularity decile only
+    31.6% are priced, while targets in that same decile are 89% priced. A
+    listing with a price is an active listing, and only active listings get
+    purchased. It is a bonus rather than a filter because 11% of targets carry
+    no price.
+
+    `rating_weight` scales the star rating. It is a far weaker signal than the
+    review count: targets average 4.372 against the catalog's 4.087, but within
+    the top popularity decile where 173 of 200 targets sit that gap shrinks to
+    4.385 against 4.301. Two thirds of rated products also sit between 4.0 and
+    5.0 stars, leaving little range to discriminate on. An unrated item scores
+    zero here, which is a penalty consistent with the purchase prior.
 
     `required_terms` (with `completeness_bonus`) rewards a candidate that
     matches every one of a customer's currently-known constraints, as
@@ -122,6 +150,8 @@ def rerank_candidates(
         parent_asin = str(candidate["parent_asin"])
         best_weight_by_term = _best_weight_by_term(query_terms, candidate)
         score = _match_score(best_weight_by_term, idf) + popularity_weight * _popularity(candidate)
+        score += price_weight * _has_price(candidate)
+        score += rating_weight * _average_rating(candidate)
         score += semantic_weight * semantic_scores.get(parent_asin, 0.0)
         score += phrase_weight * _phrase_match_count(phrase_terms, candidate)
         if required and all(best_weight_by_term.get(term, 0.0) > 0.0 for term in required):

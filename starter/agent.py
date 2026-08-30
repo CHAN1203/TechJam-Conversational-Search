@@ -30,6 +30,14 @@ OPENING_TURN = 1
 # Kept small enough that a better constraint match still outranks mere
 # popularity; it separates candidates that would otherwise tie.
 POPULARITY_WEIGHT = 1.2
+# 89% of public-set targets carry a price against 21% of the catalog, and the
+# gap survives controlling for popularity. A priced listing is an active one,
+# and only active listings get purchased. A bonus, never a filter: 11% of
+# targets have no price.
+PRICE_WEIGHT = 2.0
+# Star rating. Much weaker than the review count and largely explained by it;
+# swept separately so the data decides whether it earns any weight at all.
+RATING_WEIGHT = 0.0
 # Reasoned choice from a 3-point triangulation (0.5, 1.0, 2.0), not a full
 # validation-split sweep -- see reports/experiments/semantic-reranking.md.
 # 1.0 improved TechnicalScore with zero sessions flipping hit/miss; 2.0
@@ -133,6 +141,8 @@ class Agent:
         clarification_policy: str = "candidate",
         gazetteer_path: str | Path = "data/gazetteer.json",
         popularity_weight: float = POPULARITY_WEIGHT,
+        price_weight: float = PRICE_WEIGHT,
+        rating_weight: float = RATING_WEIGHT,
         retrieval_mode: str = "bm25",
         semantic_weight: float = SEMANTIC_WEIGHT,
         phrase_weight: float = PHRASE_WEIGHT,
@@ -141,6 +151,8 @@ class Agent:
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.popularity_weight = popularity_weight
+        self.price_weight = price_weight
+        self.rating_weight = rating_weight
         self.retrieval_mode = retrieval_mode
         self.semantic_weight = semantic_weight
         self.gazetteer = _load_gazetteer(gazetteer_path)
@@ -167,6 +179,8 @@ class Agent:
         )
         batch: list[tuple[str, str, str, str, str, str, str]] = []
         self._popularity: dict[str, float] = {}
+        self._has_price: dict[str, bool] = {}
+        self._average_rating: dict[str, float] = {}
         self._products: dict[str, dict] = {}
         dense_asins: list[str] = []
         dense_texts: list[str] = []
@@ -178,6 +192,13 @@ class Agent:
                     self._popularity[parent_asin] = float(product.get("rating_number") or 0.0)
                 except (TypeError, ValueError):
                     self._popularity[parent_asin] = 0.0
+                self._has_price[parent_asin] = product.get("price") not in (None, "")
+                try:
+                    self._average_rating[parent_asin] = float(
+                        product.get("average_rating") or 0.0
+                    )
+                except (TypeError, ValueError):
+                    self._average_rating[parent_asin] = 0.0
                 fields = (
                     _text(product.get("title")),
                     _text(product.get("categories")),
@@ -196,6 +217,8 @@ class Agent:
                     "store": fields[4],
                     "description": fields[5],
                     "rating_number": self._popularity[parent_asin],
+                    "has_price": self._has_price[parent_asin],
+                    "average_rating": self._average_rating[parent_asin],
                 }
                 if self._needs_dense_index:
                     dense_asins.append(parent_asin)
@@ -330,6 +353,8 @@ class Agent:
                     "store": row[5],
                     "description": row[6],
                     "rating_number": self._popularity.get(row[0], 0.0),
+                    "has_price": self._has_price.get(row[0], False),
+                    "average_rating": self._average_rating.get(row[0], 0.0),
                 }
                 for row in rows
             ]
@@ -352,6 +377,8 @@ class Agent:
                     candidates,
                     top_k,
                     popularity_weight=self.popularity_weight,
+                    price_weight=self.price_weight,
+                    rating_weight=self.rating_weight,
                     required_terms=required_terms,
                     completeness_bonus=COMPLETENESS_BONUS,
                     semantic_scores=semantic_scores,

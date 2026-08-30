@@ -31,6 +31,25 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class EntropyPolicyTest(unittest.TestCase):
+    def test_entropy_prefers_the_balanced_split_where_distinct_counts_tie(self) -> None:
+        # Both attributes cover every candidate and show exactly two values, so
+        # the candidate policy's (k - 1) / k spread ties and falls back to its
+        # hardcoded priority. Only the distribution separates them: material is
+        # 99/1 and buys almost nothing, color is 50/50 and halves the pool.
+        candidates = (
+            [{"title": "cotton black shirt"}] * 50
+            + [{"title": "cotton white shirt"}] * 49
+            + [{"title": "wool white shirt"}]
+        )
+
+        self.assertEqual("material", select_attribute("candidate", {}, set(), candidates))
+        self.assertEqual("color", select_attribute("entropy", {}, set(), candidates))
+
+    def test_entropy_falls_back_to_the_fixed_order_without_candidates(self) -> None:
+        self.assertEqual("material", select_attribute("entropy", {}, set(), []))
+
+
 class AlwaysOtherPolicyTest(unittest.TestCase):
     def test_always_asks_other_even_when_already_asked(self) -> None:
         # Diagnostic probe only: the local simulator answers "other" with up to
