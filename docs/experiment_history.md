@@ -53,13 +53,13 @@
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
 | E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
 | E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
-| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E18 | Local, not pushed |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E18 | `92d4714` |
 | E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
 | E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
-| E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Local, not pushed |
-| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Local, not pushed |
-| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | Local, not pushed |
-| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | **Current best** | Local, not pushed |
+| E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Review branch |
+| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Review branch |
+| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | `b3e88b8` |
+| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | **Current best** | `e9dc276` |
 | E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
@@ -632,8 +632,8 @@
   never fires.
 - Decision: **Keep. New current best.** Every scenario holds or improves;
   none regresses at all.
-- Commit/branch: local commit on `experiment/buying-browsing-routing`, not
-  pushed to the shared remote.
+- Commit/branch: `92d4714`, merged to `main` and pushed to the shared
+  remote.
 - Limitations and next step: the bonus weight (`4.0`) is one reasoned value,
   not swept -- a validation-split sweep (same method as `popularity-prior.md`)
   is the natural next step if a stronger weight is worth chasing. The
@@ -830,7 +830,8 @@
   fusion) using this experiment's dense index and complementarity evidence
   -- this experiment's purpose was exactly to produce that evidence before
   attempting fusion.
-- Commit/branch: local commit on `experiment/dense-retrieval`, not pushed.
+- Commit/branch: `review/dense-retrieval-implementation` (local only, not
+  pushed).
 - Limitations and next step: `n_components` and `max_features` are
   reasoned defaults, not swept. Evidence:
   [dense retrieval](../reports/experiments/dense-retrieval.md).
@@ -878,8 +879,8 @@
 - Decision: **Reject.** Confirms E16's own predicted risk exactly: fusing a
   much weaker signal into a much stronger one can demote good candidates as
   easily as promote missed ones. Net here: 6 lost for 1 recovered.
-- Commit/branch: local commit on `experiment/rrf-hybrid-retrieval`, not
-  pushed.
+- Commit/branch: `review/rrf-hybrid-retrieval-implementation` (local only,
+  not pushed).
 - Limitations and next step: take the **union** of both top-100 lists
   (padding, not truncating) instead of truncating the fused ranking, so
   dense can only ever add candidates BM25's own net missed, never displace
@@ -940,8 +941,8 @@
 - Decision: **Keep. New current best.** `SEMANTIC_WEIGHT = 1.0` is now the
   `Agent` default, confirmed with the plain, unmodified `Agent()`
   construction.
-- Commit/branch: local commit on `experiment/semantic-reranking`, not
-  pushed.
+- Commit/branch: `b3e88b8`, merged to `main` and pushed to the shared
+  remote.
 - Limitations and next step: a full validation-split sweep (same method as
   `popularity-prior.md`) could find a better weight than this 3-point
   triangulation did. Evidence:
@@ -991,7 +992,8 @@
   construction. The size of this gain suggests bag-of-words scoring really
   was leaving precision on the table for phrase-shaped constraints, not a
   dataset-specific quirk.
-- Commit/branch: local commit on `experiment/phrase-bonus`, not pushed.
+- Commit/branch: `e9dc276`, merged to `main` and pushed to the shared
+  remote.
 - Limitations and next step: a full validation-split sweep could find a
   better weight than this 3-point triangulation. Evidence:
   [phrase bonus](../reports/experiments/phrase-bonus.md).
