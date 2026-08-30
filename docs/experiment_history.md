@@ -142,6 +142,9 @@
 | E26 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | E11 (parallel) | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | Retired at T38 (marginal `0.000083`) | See branch |
 | E27 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | E11 (parallel) | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
 | E28 | Merged line | E12-E23 rank quality merged with E24-E27 conversational coverage; merged twice, see T36 and T39 | 195 | E22 | **0.995** | +0.015 | **0.791810** | 2.405 | 0.8595 | **0.906943** | **+0.022202** | **Current best** | See T39 |
+| E29 | Slot-projected semantic query | Build the dense index's query from active slotted ledger entries instead of the raw term bag | 197 | E28 | 0.995 | +0.000 | 0.791976 | 2.405 | 0.8595 | 0.906993 | +0.000050 | Reject; 2.7% of a 0.001871 budget | Not committed |
+| E30 | Hard/soft constraint separation | Require only constraints the customer phrased as requirements, detected from the evaluator's wording | 197 | E28 | 0.995 | +0.000 | 0.784006 | 2.405 | 0.8595 | 0.904602 | -0.002341 | Reject; loosens a bonus whose value is strictness | Not committed |
+| E30-A | Separate hard-constraint bonus | Keep `required_terms` and add a second completeness test over the hard subset | 197 | E28 | 0.995 | +0.000 | 0.791810 | 2.405 | 0.8595 | 0.906943 | +0.000000 | Reject; satisfied by 0.1 candidates of 100 | Not committed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -1828,6 +1831,80 @@ sparser metadata. Evidence:
   uses it, so the claim "this agent runs on the standard library" stays true
   for every configuration that does not opt into semantics.
 
+### T41: Query representation, both halves (both rejected)
+
+- Date: 2026-08-30
+- Context: a proposal to build a query-understanding module holding a
+  structured representation and a semantic one separately, in the style of
+  Amazon's query reformulation and hint-augmented reranking work, with LLM
+  decomposition feeding deterministic retrieval.
+- First finding: **the separation already exists.** The agent builds four query
+  representations per turn -- `slots_view()` for the completeness bonus, an
+  `OR` expression for FTS5, a space-joined bag for the dense index, and
+  bigrams of the raw message for the phrase bonus. What was missing was any
+  *rewriting*.
+- **E29, slot-projected semantic query.** The dense index was being handed the
+  raw accumulated bag including evaluator phrasing
+  (`tees blouses tunics hand wash only what matters polyester 60`). Projecting
+  only active slotted entries in title order gives `blouses tees tunics
+  polyester`. Result: `0.906943 -> 0.906993`, `+0.000050`. Rejected.
+- The number that matters is the ceiling, not the result. Turning the semantic
+  term off entirely costs `0.001871`, and `query_text` feeds nothing else, so
+  **any** rewrite of it competes for that budget. The projection took 2.7% of
+  it. An LLM-generated query would compete for the same `0.001871` while
+  costing a model dependency, tokens, latency and the project's
+  `usage: {prompt_tokens: 0}` property. That settles the LLM-rewrite question
+  without building it.
+- **E30, hard/soft separation.** The hidden hard/soft labels turn out to be
+  exactly observable from the evaluator's wording: `"A key requirement is:"`
+  precedes a hard constraint 80 times out of 80, the override's
+  `"What I need is:"` 30 out of 30, and an unmarked turn-1 clause is soft 30
+  out of 30. Zero errors over 110 occurrences. This is template reading, the
+  mirror image of E25, where catalog IDF weighted `matters`, `requirement` and
+  `key` highest for the same reason.
+- Result: `0.906943 -> 0.904602`, `-0.002341`, entirely MRR. Rejected.
+- Mechanism: the completeness bonus rewards matching *every* known constraint,
+  and its value is that this is hard. Requiring only the hard constraints drops
+  `required_terms` from 1.76 to 1.36 per turn and raises the candidates earning
+  the bonus from 60 to 64.8 of 100. **We widened the holes in a sieve.** E22 is
+  the counter-example that confirms it: extending the same bonus to Browsing
+  was worth `+0.004071` because it widens *where* the bonus applies while
+  keeping it equally strict. Extend it, never loosen it.
+- Side finding that closes two earlier experiments: `source` (volunteered vs
+  answered) is a poor proxy for hard/soft. Volunteered turn-1 constraints are
+  73% hard, answered ones 66.7%, against a 70.5% base rate. That is why
+  E24-C1's `answered_weight` and E23's `recency_weight` both swept to zero --
+  **both were proxies for a distinction their signal does not carry.**
+- Graceful degradation was built and verified: with no marker detected the hard
+  set is empty and `required_terms` is untouched, so an unmarked conversation
+  behaves exactly as before. It is not what decided the experiment; the
+  mechanism is wrong even when detection is perfect.
+- What this bounds: semantic scoring is worth `0.001871` and the completeness
+  bonus `0.009154`, so those are the ceilings for improving their respective
+  inputs, and E20 showed that changing the lexical query costs sessions. In a
+  system whose largest single mechanism is a popularity prior worth `0.060`,
+  query understanding is not where the remaining headroom lives.
+- **E30-A, the opposite construction.** T41's own limitation named it: keep
+  `required_terms` and add a *separate* bonus over the hard subset -- stricter,
+  not looser. Measured at `0.906943`, identical to every digit, and for the
+  opposite reason. `hard_surfaces()` marks every token of a marked message,
+  including the `I'm looking for {category}` clause, so the hard set runs 5.22
+  terms wider than `required_terms`; demanding all of them is satisfied by
+  `0.1` candidates of 100. The bonus went to nobody.
+- The two failures bracket the mechanism. `1.36` terms earns it 64.8 times of
+  100 and loses `0.002341`; `1.76` terms earns it 60.0 times and is the
+  baseline; `6.98` terms earns it 0.1 times and changes nothing. **The
+  completeness bonus sits on a sweet spot** -- few enough must earn it to
+  discriminate, not so few that nobody does. Both sides are worse. That is also
+  why E22 worked: extending it to Browsing changes *where* it applies without
+  touching how hard it is to earn.
+- Four variants of query representation were tested and all four rejected, each
+  against a different wall: E29 against a `0.001871` ceiling, E30 against a
+  sieve made too coarse, E30-A against one made too fine, and E20 (on the other
+  line) against a fixed candidate pool that a widened query only dilutes. This
+  is not "no good method was found"; it is four distinct mechanisms.
+- Evidence: [query representation](../reports/experiments/query-representation.md).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -1936,3 +2013,4 @@ tests` reports.
 - [Exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md)
 - [Implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md)
 - [Merged-system ablation](../reports/experiments/merged-system-ablation.md)
+- [Query representation](../reports/experiments/query-representation.md)

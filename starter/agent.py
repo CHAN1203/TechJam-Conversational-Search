@@ -7,7 +7,9 @@ import sqlite3
 from pathlib import Path
 
 from starter.clarification import DEFAULT_ATTRIBUTE_ORDER, select_attribute
-from starter.ledger import ANSWERED, VOLUNTEERED, ConstraintLedger, assign_slots
+from starter.ledger import (
+    ANSWERED, HARD, UNKNOWN, VOLUNTEERED, ConstraintLedger, assign_slots,
+)
 from starter.slots import extract_slots
 from starter.reranker import extract_bigrams, rerank_candidates
 
@@ -102,6 +104,28 @@ def _is_no_preference(message: str) -> bool:
 
 def _constraint_terms(message: str) -> list[str]:
     return [] if _is_no_preference(message) else _terms(message)
+
+
+# Phrases the evaluator uses to introduce a hard constraint. Measured over all
+# 200 public sessions: "A key requirement is:" precedes a hard constraint 80
+# times out of 80, and the override's "What I need is:" 30 out of 30, while an
+# unmarked turn-1 clause is a soft preference 30 out of 30 (T41).
+#
+# Recorded on the ledger, not scored. Two ways of acting on it were measured
+# and rejected: requiring only the hard subset loosens the completeness bonus
+# (E30), and requiring all of it tightens the bonus past the point anything can
+# satisfy (E30-A). The field is kept because the signal is exact and cost-free,
+# and because it is the one honest basis for a hard/soft distinction if a later
+# experiment finds a use that does not disturb that bonus.
+#
+# This reads the simulator's phrasing rather than understanding language. A
+# customer wording a requirement differently is simply not detected.
+HARD_CONSTRAINT_MARKERS = ("a key requirement is:", "what i need is:")
+
+
+def _stated_strength(message: str) -> str:
+    lowered = message.lower()
+    return HARD if any(m in lowered for m in HARD_CONSTRAINT_MARKERS) else UNKNOWN
 
 
 def _is_intent_override(message: str) -> bool:
@@ -384,6 +408,7 @@ class Agent:
             assign_slots(current_terms, message_slots),
             turn,
             ANSWERED if turn > OPENING_TURN else VOLUNTEERED,
+            _stated_strength(user_message),
         )
         # A turn that adds no active entry cannot change the ranking: retrieval
         # is a pure function of the projected terms. Counting these is how the

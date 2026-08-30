@@ -37,6 +37,12 @@ SUPERSEDED = "superseded"
 # so a per-term confidence would be 1.0 for every entry.
 VOLUNTEERED = "volunteered"
 ANSWERED = "answered"
+
+# How firmly the customer stated a constraint, when they said so explicitly.
+# UNKNOWN is the default and the safe one: a ledger where nothing is marked
+# HARD behaves exactly as it did before this field existed.
+HARD = "hard"
+UNKNOWN = "unknown"
 # Recorded but not scored. Weighting entries by source was measured and
 # rejected (E13-C1: the validation optimum was the off position), and the
 # weighting hook was dropped when the reranker was restructured upstream.
@@ -55,6 +61,7 @@ class Entry:
     slot: str | None
     status: str = ACTIVE
     source: str = VOLUNTEERED
+    strength: str = UNKNOWN
     first_turn: int = 1
     last_turn: int = 1
 
@@ -101,6 +108,7 @@ class ConstraintLedger:
         token_slots: Mapping[str, str],
         turn: int,
         source: str,
+        strength: str = UNKNOWN,
     ) -> int:
         """Add new entries and refresh the ones the customer restated.
 
@@ -120,6 +128,7 @@ class ConstraintLedger:
                     slot=token_slots.get(token),
                     status=ACTIVE,
                     source=source,
+                    strength=strength,
                     first_turn=turn,
                     last_turn=turn,
                 )
@@ -128,6 +137,10 @@ class ConstraintLedger:
                 gained += 1
             entry.last_turn = turn
             entry.status = ACTIVE
+            if strength == HARD:
+                # Restating something as a requirement upgrades it; a later
+                # unmarked mention never downgrades it back.
+                entry.strength = HARD
             if entry.slot is None and token in token_slots:
                 entry.slot = token_slots[token]
         return gained
@@ -168,6 +181,18 @@ class ConstraintLedger:
             for entry in self._entries.values()
             if entry.status == ACTIVE
         ][:limit]
+
+    def hard_surfaces(self) -> set[str]:
+        """Active entries the customer explicitly stated as requirements.
+
+        Empty whenever nothing was marked, which is what makes the caller's
+        fallback the pre-existing behaviour rather than a new one.
+        """
+        return {
+            entry.surface
+            for entry in self._entries.values()
+            if entry.status == ACTIVE and entry.strength == HARD
+        }
 
     def slots_view(self) -> dict[str, dict[str, int]]:
         """Active slotted entries in the shape the slot-based agent reports.
