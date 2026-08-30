@@ -1,8 +1,14 @@
 # Price and Rating Priors
 
-Date: 2026-08-30
-Status: price prior current best. TechnicalScore `0.841838` -> `0.858595`.
-Rating prior implemented, swept, and shipped disabled at `0.0`.
+Date: 2026-08-30 (re-measured on the merged E19 stack the same day)
+Status: **E21, current best.** On the merged stack, TechnicalScore
+`0.868476` -> `0.880670`. Rating prior implemented, swept, and shipped
+disabled at `0.0`.
+
+The sweeps in "Weight selection" below were run on the **pre-merge E11
+stack**, before E13-E20 existed locally, and are kept because they are the
+evidence the prior was designed from. The post-merge re-sweep that decides
+the shipped weight is in "Re-sweep on the merged stack" at the end.
 
 ## Where it came from
 
@@ -108,7 +114,7 @@ The code path is implemented and unit-tested so the weight can be turned on
 from a single constant if the private set justifies it, but the default is
 `0.0` and nothing in the current results justifies more.
 
-## Result
+## Result (pre-merge E11 stack)
 
 Popularity `1.2` alone versus popularity `1.2` + price `2.0`, full 200:
 
@@ -130,8 +136,37 @@ The entire gain lands in Buying, which is the scenario the prior was reasoned
 about: an active, purchasable listing matters most when the user is actually
 buying. Nothing regressed.
 
+## Re-sweep on the merged stack (E21)
+
+E13-E20 landed from a parallel branch after these sweeps were run, so the
+weight was re-swept rather than carried over. Same split and seed, on top of
+E19 (routing + semantic reranking + phrase bonus):
+
+| Price weight | Validation | Full | HitRate@10 | MRR |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.0 (E19) | 0.883582 | 0.868476 | 0.980 | 0.715919 |
+| 1.0 | 0.892926 | 0.873253 | 0.980 | 0.728177 |
+| **2.0** | **0.895201** | **0.880670** | 0.980 | **0.756899** |
+| 3.0 | 0.894515 | 0.878848 | 0.980 | 0.749825 |
+| 5.0 | 0.892311 | 0.871899 | 0.975 | 0.736331 |
+
+`2.0` holds, and the split disagreement noted above is gone: validation and
+full now peak at the same weight. The deviation from the validation-only
+rule that `2.0` originally required no longer applies on this stack.
+
+No scenario hit rate moves (Buying `0.9875`, Browsing `1.0000`, Intent
+Override `0.933333`, Boundary `0.9000`) and MTTC is `0.005` worse; the whole
+`+0.012194` is MRR `+0.040980`. That is the expected shape for a
+tie-breaking prior stacked under E19: the phrase bonus decides which
+candidates surface, the price prior orders the ones that surface tied.
+
 ## Limitations
 
+- **E21 has not been run through the coverage-stress diagnostic.** T25's
+  stress catalog masks price down to 42 of 200 targets by construction, so
+  this is the layer most exposed to it. The dual-catalog tooling supports
+  it directly: `python -m scripts.run_popularity_sweep --weights 1.2
+  --price-weight 2.0`.
 - **Price and rating were never swept jointly.** Both tables above hold the
   other weight at zero, so the shipped combination is the price column, not a
   jointly optimised pair. If the rating prior is ever enabled its weight must

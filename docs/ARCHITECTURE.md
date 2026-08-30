@@ -1,9 +1,17 @@
 # Architecture: what happens on one turn
 
-Current best is the popularity prior plus the price prior, public
-TechnicalScore `0.858595`. This describes the code as it runs today, not the
-design plan. Every stage below is stdlib-only:
-no model, no network, no numpy.
+Current best is **E21**, public TechnicalScore `0.880670`. This describes the
+code as it runs today, not the design plan.
+
+Everything here is stdlib plus scikit-learn and numpy
+([`requirements.txt`](../requirements.txt)); there is still no neural model,
+no pretrained weights, no network access, and zero reported tokens. The
+dependency arrived with E18: `starter/agent.py` imports
+[`starter/dense.py`](../starter/dense.py) unconditionally, so scikit-learn is
+required merely to construct an `Agent`, not only for the optional
+`retrieval_mode="dense"/"rrf"` paths. The dense index is TF-IDF + Truncated
+SVD (latent semantic analysis) over the frozen catalog, built once at
+startup.
 
 Entry point is `Agent.respond(session_id, user_message, turn, top_k)` in
 [`starter/agent.py`](../starter/agent.py).
@@ -32,9 +40,15 @@ flowchart TD
     CARRY --> MERGE
     MERGE["Merge this message's slots,<br/>recording arrival turn"] --> CAP["unique_terms =<br/>dedupe previous + current,<br/>truncated to 40"]
 
+    IN --> ROUTE{"Turn 1 only:<br/>classify_route"}
+    ROUTE -->|"a non-durable slot<br/>on the opening turn"| BUY["buying:<br/>required_terms = known constraints"]
+    ROUTE -->|"category/department<br/>only, or nothing"| BROWSE["browsing:<br/>no required_terms"]
+    BUY --> CAP
+    BROWSE --> CAP
+
     CAP --> BM25["SQLite FTS5<br/>OR query over all terms<br/>field-weighted BM25"]
     BM25 --> POOL["Top 100 candidates"]
-    POOL --> RANK["Rerank:<br/>field coverage + popularity + price"]
+    POOL --> RANK["Rerank: field coverage<br/>+ popularity + price<br/>+ semantic + phrase<br/>+ completeness (buying only)"]
     RANK --> TOP10["Top 10 parent_asin"]
 
     POOL --> CLAR["select_attribute, candidate policy:<br/>score coverage x diversity of each<br/>attribute across the 100 candidates,<br/>never repeat an attribute"]
@@ -43,6 +57,11 @@ flowchart TD
     TOP10 --> OUT["message, ask_attribute,<br/>recommendations, usage"]
     ASK --> OUT
 ```
+
+`select_attribute` supports five policies -- `fixed`, `profile`, `candidate`
+(the default), `entropy`, and the `other` diagnostic probe. Only `candidate`
+is shipped; the rest exist as ablation arms. See
+[clarification-ablation.md](../reports/experiments/clarification-ablation.md).
 
 ## Slot extraction
 
@@ -116,6 +135,9 @@ flowchart TD
         F["For every query term,<br/>take the single highest-value<br/>field it appears in, then sum"]
         P["+ 1.2 x log1p of rating_number"]
         PR["+ 2.0 if the listing carries a price"]
+        SEM["+ 1.0 x dense cosine similarity<br/>(TF-IDF + SVD, E18)"]
+        PH["+ 1.0 per adjacent word-pair from<br/>this turn's message found as a<br/>literal substring (E19)"]
+        CB["+ 4.0 if every currently-known<br/>constraint matches<br/>(buying route only, E13)"]
     end
 
     SCORE --> SORT["Sort by score descending;<br/>ties keep original BM25 order"]
@@ -184,6 +206,9 @@ is off. See
 | --- | ---: | --- |
 | `CANDIDATE_POOL_SIZE` | 100 | `starter/agent.py` |
 | `POPULARITY_WEIGHT` | 1.2 | `starter/agent.py` |
+| `SEMANTIC_WEIGHT` | 1.0 | `starter/agent.py` |
+| `PHRASE_WEIGHT` | 1.0 | `starter/agent.py` |
+| `COMPLETENESS_BONUS` | 4.0 | `starter/agent.py` |
 | `PRICE_WEIGHT` | 2.0 | `starter/agent.py` |
 | `RATING_WEIGHT` | 0.0 (disabled) | `starter/agent.py` |
 | `DURABLE_SLOTS` | category, department | `starter/agent.py` |
@@ -194,11 +219,24 @@ is off. See
 
 ## What is deliberately absent
 
-- No neural network, no embeddings, no LLM. Zero tokens reported.
+- No neural network, no pretrained weights, no LLM. Zero tokens reported.
+  The only "embedding" is E18's TF-IDF + SVD index, fit on the frozen catalog
+  at startup: term co-occurrence structure, not learned semantics.
 - No network access on the scored path.
 - Candidate pool 500 was tested and rejected: `-0.001461` (E7).
 - IDF weighting was tested and rejected at both pool sizes and behind an
   override-only route: `-0.0143` at best (E8, E10).
+- Dense retrieval replacing BM25 was tested and rejected: `-0.247707` (E16).
+  Fusing the two by Reciprocal Rank Fusion was also rejected: `-0.017014`,
+  traced to pool truncation evicting good candidates (E17). The dense index
+  survives only as a reranking signal (E18).
+- Query-side stemming was tested and rejected: `-0.047052`, traced to a
+  broader query overflowing the fixed 100-candidate cutoff (E20).
+- Choosing the clarification attribute by Shannon entropy of its value split
+  instead of `coverage x diversity` was tested and rejected twice
+  independently: `-0.000437` full (E14) and `-0.001812` validation on a
+  separate implementation. Retained as the `entropy` policy for ablation;
+  the default remains `candidate`.
 - If `data/gazetteer.json` is missing the agent degrades silently to pre-slot
   behaviour rather than raising, costing roughly `0.84 -> 0.73`. Check that file
   first if a run reports a lower score.

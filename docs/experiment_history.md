@@ -8,10 +8,17 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E19 Phrase (Bigram) Bonus, with public HitRate@10 `0.980`,
-> MRR `0.715919`, MTTC `2.815`, and TechnicalScore `0.868476`. The largest
-> single-experiment gain since E13: 2 sessions recovered, 0 lost, versus
-> E18.
+> Current best: E21 Price Presence Prior, with public HitRate@10 `0.980`,
+> MRR `0.756899`, MTTC `2.820`, and TechnicalScore `0.880670`.
+>
+> E21 was developed on `feat/hs` in parallel with E13-E20 and merged after
+> E20, so it is numbered after the branch it merged into rather than by the
+> date it was run. It stacks on E19 without moving HitRate@10 or any
+> scenario hit rate: the entire `+0.012194` is rank quality (MRR
+> `+0.040980`), which is what a tie-breaking prior is expected to buy.
+>
+> E19 Phrase (Bigram) Bonus remains the largest single-experiment gain
+> since E13: 2 sessions recovered, 0 lost, versus E18.
 >
 > E15 was reverted after review: its result is not an improvement on any
 > measurable metric (0/200 public sessions differ from E13). Its only
@@ -59,8 +66,9 @@
 | E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Review branch |
 | E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Review branch |
 | E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | `b3e88b8` |
-| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | **Current best** | `e9dc276` |
+| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | Superseded by E21 | `e9dc276` |
 | E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
+| E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | **Current best** | `fe86b63` |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -97,6 +105,7 @@
 | E18 Semantic reranking score | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
 | E19 Phrase (bigram) bonus | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
 | E20 Query-side stemming | 0.9375 | 0.9500 | 0.866667 | 0.9000 |
+| E21 Price presence prior | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -1100,23 +1109,101 @@ regresses. E13/E18/E19's added layers do not introduce new sensitivity to
 sparser metadata. Evidence:
 [E19 validation result](../reports/experiments/coverage-stress-post-e19-validation.json).
 
+### T26: Price presence prior (current best)
+
+- Date: 2026-08-29 (run), merged and re-measured on the E19 stack
+  2026-08-30.
+- Numbering note: developed on `feat/hs` in parallel with E13-E20, before
+  those existed locally. Its original standalone result was measured on the
+  E11 stack (TechnicalScore `0.841838` -> `0.858595`). Every number below is
+  the post-merge re-measurement on top of E19, which is the only comparison
+  that describes this tree.
+- Origin: the two catalog fields E11 left unused. `price` and
+  `average_rating` were both measured against the targets before either was
+  weighted.
+- Measurement: 89.0% of the 200 public targets carry a price against 21.1%
+  of the 50,000-item catalog. The gap is not popularity in disguise --
+  inside the catalog's top popularity decile, where 173 of 200 targets
+  already sit, only 31.6% of products are priced against 89.0% of targets.
+  A priced listing is an active listing, and only active listings get
+  purchased.
+- Change: `_has_price` / `_average_rating` in `starter/reranker.py` and
+  `price_weight` / `rating_weight` on `rerank_candidates`;
+  `starter/agent.py` collects both fields during index construction into
+  their own dicts, leaving the FTS5 `bm25()` column weights untouched.
+  Presence only -- the price value is never read. A bonus, never a filter:
+  11% of targets have no price, so excluding unpriced candidates would make
+  those sessions unwinnable.
+- New tests: 6 (`PricePresencePriorTest`, `AverageRatingPriorTest`).
+  143/143 project tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Weight re-swept on the merged stack, not carried over. Validation is the
+  80-session held-out split (`techjam-clarification-v1`):
+
+  | Price weight | Validation | Full | HitRate@10 | MRR |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 0.0 (E19) | 0.883582 | 0.868476 | 0.980 | 0.715919 |
+  | 1.0 | 0.892926 | 0.873253 | 0.980 | 0.728177 |
+  | **2.0** | **0.895201** | **0.880670** | 0.980 | **0.756899** |
+  | 3.0 | 0.894515 | 0.878848 | 0.980 | 0.749825 |
+  | 5.0 | 0.892311 | 0.871899 | 0.975 | 0.736331 |
+
+  Validation and full agree on `2.0` on this stack. They did not agree on
+  the pre-merge E11 stack, where validation favoured `3.0` and `2.0` was
+  chosen as the point all three splits agreed on; the merge removed that
+  disagreement rather than creating it.
+- Result: HitRate@10 `0.980 -> 0.980`, MRR `0.715919 -> 0.756899`, MTTC
+  `2.815 -> 2.820`, TechnicalScore `0.868476 -> 0.880670` (`+0.012194`).
+  **No scenario hit rate moves** (Buying `0.9875`, Browsing `1.0000`,
+  Intent Override `0.933333`, Boundary `0.9000`), and MTTC is `0.005`
+  worse. The entire gain is MRR.
+- Decision: **Keep. New current best.** `PRICE_WEIGHT = 2.0` is the `Agent`
+  default. The gain being pure MRR is consistent with the mechanism: E19's
+  phrase bonus decides which candidates surface, and the price prior orders
+  the ones that surface tied.
+- `RATING_WEIGHT` ships at `0.0`. The rating prior is implemented and
+  unit-tested but disabled: once popularity is controlled for, the
+  target/catalog rating gap collapses from `0.285` to `0.084`, and its two
+  splits disagree about the weight. It was never swept jointly with price,
+  so the standalone rating numbers are not a guide for enabling it on top
+  of price `2.0`.
+- Commit/branch: `fe86b63` on `feat/hs`.
+- Limitations: the 89%/21% price gap is a property of how the public set
+  was built, and T25's coverage-stress catalog masks price down to 42 of
+  200 targets by design -- E21 is the layer most exposed to that
+  diagnostic, and has not yet been run through it. Evidence:
+  [price and rating priors](../reports/experiments/price-rating-prior.md),
+  [E21 weight sweep](../reports/experiments/price-prior-e21.json).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
   | --- | ---: | --- |
-  | `test_evaluator.py` | 3 | Output normalization, miss turn, hidden-field materialization |
+  | `test_agent_reranking.py` | 3 | Agent reranks a larger candidate pool |
   | `test_bm25_diagnostics.py` | 3 | Rank, cutoff recall, first-turn measurement |
   | `test_catalog_profile.py` | 1 | Coverage meaning for empty collections |
-  | `test_reranker.py` | 4 | Complete-constraint priority, BM25 tie order, and optional catalog IDF |
-  | `test_agent_reranking.py` | 1 | Agent reranks a larger candidate pool |
-  | `test_conversation_state.py` | 14 | Accumulation, negation, slot-aware override, fallback behavior, policy selection and default |
+  | `test_catalog_variants.py` | 5 | Official/stress/dual mode resolution and rebuild-on-stale |
   | `test_clarification.py` | 3 | Fixed/profile difference, candidate grounded-attribute selection, and `other` probe |
-  | `test_clarification_ablation.py` | 1 | Multiple policies and splits on the real FTS5 evaluator |
+  | `test_clarification_ablation.py` | 2 | Multiple policies and splits on the real FTS5 evaluator |
+  | `test_conversation_state.py` | 40 | Accumulation, negation, slot-aware override, routing, fallback behavior, policy selection and default |
+  | `test_coverage_stress.py` | 11 | Deterministic masking, invariants, atomic writes, path-collision rejection |
+  | `test_dense.py` | 11 | TF-IDF + SVD index build, projection, and search |
+  | `test_dual_catalog_evaluation.py` | 2 | Official/stress/delta payload shape |
+  | `test_evaluator.py` | 3 | Simulator replies and metric aggregation |
+  | `test_experiment_results.py` | 2 | Split metrics, scenario metrics, TechnicalScore, and dual deltas |
   | `test_experiment_split.py` | 1 | Fixed split size, stratification, and no dev/validation overlap |
-  | `test_experiment_results.py` | 1 | Split metrics, scenario metrics, and TechnicalScore |
   | `test_gazetteer.py` | 16 | Vocabulary mining, normalization, coverage, and one-slot precedence |
+  | `test_popularity_sweep.py` | 2 | Weight/split/difficulty rows and dual-catalog deltas |
+  | `test_reranker.py` | 24 | Complete-constraint priority, BM25 tie order, catalog IDF, popularity, price, rating, semantic, and phrase terms |
+  | `test_session_viewer.py` | 9 | Transcript recording and viewer server |
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
-  | **Total** | **53** | Current full regression suite |
+  | **Total** | **143** | Current full regression suite |
 
   Run the full tests:
 
@@ -1185,4 +1272,5 @@ sparser metadata. Evidence:
 - [Balanced clarification experiment](../reports/experiments/balanced-clarification.md)
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
 - [Popularity prior](../reports/experiments/popularity-prior.md)
+- [Price and rating priors](../reports/experiments/price-rating-prior.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)
