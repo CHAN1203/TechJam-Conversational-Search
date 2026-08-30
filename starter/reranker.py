@@ -28,23 +28,51 @@ def _popularity(candidate: Mapping[str, object]) -> float:
     return math.log1p(max(count, 0.0))
 
 
-def _match_score(
-    query_terms: Sequence[str],
-    candidate: Mapping[str, object],
-    idf: Mapping[str, float] | None = None,
-    term_weights: Mapping[str, float] | None = None,
-) -> float:
+def _average_rating(candidate: Mapping[str, object]) -> float:
+    try:
+        return float(candidate.get("average_rating") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _has_price(candidate: Mapping[str, object]) -> float:
+    return 1.0 if candidate.get("has_price") else 0.0
+
+
+def extract_bigrams(text: str) -> list[str]:
+    """Consecutive word pairs, lowercased, from one piece of text -- a
+    phrase relationship is a property of adjacency within a single
+    utterance, not something to accumulate across turns."""
+    tokens = TOKEN_RE.findall(text.lower())
+    return [f"{a} {b}" for a, b in zip(tokens, tokens[1:])]
+
+
+def _combined_field_text(candidate: Mapping[str, object]) -> str:
+    return " ".join(str(candidate.get(field, "")) for field in FIELD_WEIGHTS).lower()
+
+
+def _phrase_match_count(phrase_terms: Sequence[str], candidate: Mapping[str, object]) -> int:
+    combined = _combined_field_text(candidate)
+    return sum(1 for phrase in phrase_terms if phrase in combined)
+
+
+def _best_weight_by_term(query_terms: Sequence[str], candidate: Mapping[str, object]) -> dict[str, float]:
     best_weight_by_term = {term: 0.0 for term in query_terms}
     for field, weight in FIELD_WEIGHTS.items():
         tokens = _field_tokens(candidate.get(field, ""))
         for term in best_weight_by_term.keys() & tokens:
             best_weight_by_term[term] = max(best_weight_by_term[term], weight)
-    if idf is None and term_weights is None:
+    return best_weight_by_term
+
+
+def _match_score(
+    best_weight_by_term: Mapping[str, float],
+    idf: Mapping[str, float] | None = None,
+) -> float:
+    if idf is None:
         return sum(best_weight_by_term.values())
     return sum(
-        weight
-        * (1.0 if idf is None else idf.get(term, 1.0))
-        * (1.0 if term_weights is None else term_weights.get(term, 1.0))
+        weight * idf.get(term, 1.0)
         for term, weight in best_weight_by_term.items()
     )
 
@@ -55,7 +83,14 @@ def rerank_candidates(
     top_k: int,
     idf: Mapping[str, float] | None = None,
     popularity_weight: float = 0.0,
-    term_weights: Mapping[str, float] | None = None,
+    price_weight: float = 0.0,
+    rating_weight: float = 0.0,
+    required_terms: Sequence[str] | None = None,
+    completeness_bonus: float = 0.0,
+    semantic_scores: Mapping[str, float] | None = None,
+    semantic_weight: float = 0.0,
+    phrase_terms: Sequence[str] | None = None,
+    phrase_weight: float = 0.0,
     shown_penalty: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Order candidates by field-weighted term matches.
@@ -72,26 +107,68 @@ def rerank_candidates(
     weight is kept small enough that a better constraint match still wins, so
     the prior separates candidates that are otherwise tied.
 
-    `term_weights` scales each term independently of `idf`. The constraint
-    ledger supplies it, so a constraint the customer gave in answer to a
-    question can count differently from one they volunteered up front.
+    `price_weight` scales a flat bonus for carrying a price at all. 89% of
+    public targets have one against 21% of the catalog, and the gap survives
+    controlling for popularity: within the catalog's top popularity decile only
+    31.6% are priced, while targets in that same decile are 89% priced. A
+    listing with a price is an active listing, and only active listings get
+    purchased. It is a bonus rather than a filter because 11% of targets carry
+    no price.
 
-    `shown_penalty` subtracts from a candidate that has already been put in
-    front of the customer. A shopper who saw ten products and kept talking has
-    implicitly declined them, and repeating the same ten is the one thing that
-    cannot succeed. This is negative evidence the conversation supplies for
-    free every turn.
+    `rating_weight` scales the star rating. It is a far weaker signal than the
+    review count: targets average 4.372 against the catalog's 4.087, but within
+    the top popularity decile where 173 of 200 targets sit that gap shrinks to
+    4.385 against 4.301. Two thirds of rated products also sit between 4.0 and
+    5.0 stars, leaving little range to discriminate on. An unrated item scores
+    zero here, which is a penalty consistent with the purchase prior.
+
+    `required_terms` (with `completeness_bonus`) rewards a candidate that
+    matches every one of a customer's currently-known constraints, as
+    opposed to one that racks up more individual term matches elsewhere
+    without satisfying all of them together. `required_terms` must be a
+    subset of `query_terms` -- completeness is read off the same per-term
+    field weights already computed for scoring, not a second text scan.
+    Intended for Buying-classified sessions only; omit for Browsing, where
+    the customer has not committed to a specific value yet.
+
+    `semantic_scores` maps `parent_asin` to a precomputed similarity score
+    (e.g. dense cosine similarity between the query and that candidate),
+    added as `semantic_weight * semantic_scores[parent_asin]`. A candidate
+    absent from the mapping contributes zero, not an error -- the semantic
+    signal is a bonus on top of lexical scoring, never a requirement.
+
+    `phrase_terms` (with `phrase_weight`) rewards a candidate whose text
+    contains the customer's adjacent word-pairs as a literal substring, not
+    just the same words scattered independently -- "running shoe" as a
+    phrase is more specific than a document matching "running" and "shoe"
+    in unrelated places.
+
+    `shown_penalty` subtracts from a candidate the customer has already been
+    shown and has not taken. A shopper who saw ten products and kept talking
+    has implicitly declined them, and repeating the same ten is the one
+    outcome that cannot succeed. The agent applies it only once its
+    information-gain counter says the conversation has stopped yielding; while
+    new constraints are arriving the ranking is improving for legitimate
+    reasons and the top of the list is left alone. The weight is kept to about
+    one field-weight unit so a clearly better match still outranks a merely
+    newer one; larger values stop being an ordering.
     """
-    scored = [
-        (
-            _match_score(query_terms, candidate, idf, term_weights)
-            + popularity_weight * _popularity(candidate)
-            - (0.0 if shown_penalty is None
-               else shown_penalty.get(str(candidate["parent_asin"]), 0.0)),
-            rank,
-            str(candidate["parent_asin"]),
-        )
-        for rank, candidate in enumerate(candidates)
-    ]
+    required = set(required_terms or ())
+    semantic_scores = semantic_scores or {}
+    phrase_terms = phrase_terms or ()
+    shown_penalty = shown_penalty or {}
+    scored = []
+    for rank, candidate in enumerate(candidates):
+        parent_asin = str(candidate["parent_asin"])
+        best_weight_by_term = _best_weight_by_term(query_terms, candidate)
+        score = _match_score(best_weight_by_term, idf) + popularity_weight * _popularity(candidate)
+        score += price_weight * _has_price(candidate)
+        score += rating_weight * _average_rating(candidate)
+        score += semantic_weight * semantic_scores.get(parent_asin, 0.0)
+        score += phrase_weight * _phrase_match_count(phrase_terms, candidate)
+        if required and all(best_weight_by_term.get(term, 0.0) > 0.0 for term in required):
+            score += completeness_bonus
+        score -= shown_penalty.get(parent_asin, 0.0)
+        scored.append((score, rank, parent_asin))
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [parent_asin for _, _, parent_asin in scored[:top_k]]

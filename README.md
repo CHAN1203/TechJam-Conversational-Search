@@ -34,9 +34,13 @@ Verify the downloaded file using the published `SHA256SUMS` file.
 
 ## Run the Starter
 
-Python 3.10 or later is recommended. The starter uses only the Python standard library.
+Python 3.10 or later is recommended. Since E18 (semantic reranking), the
+starter also depends on `scikit-learn` (used for a lightweight TF-IDF +
+Truncated SVD similarity score -- no downloaded model weights, no
+network access at runtime):
 
 ```bash
+pip install -r requirements.txt
 python3 -m evaluator.local_evaluator
 ```
 
@@ -92,6 +96,12 @@ The English documents in `docs/` and `reports/` are the Git-tracked source of
 truth. Optional Chinese translations live only on the local machine under
 `docs/zh-CN/` and `reports/zh-CN/`; Git ignores those folders, so they are not
 included in commits or pushed to GitHub.
+
+## Architecture
+
+A per-turn walkthrough of the current system, with diagrams for slot
+extraction, intent-override memory, retrieval and ranking:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Agent Interface
 

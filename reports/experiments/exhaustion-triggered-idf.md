@@ -1,4 +1,4 @@
-# E15: Exhaustion-Triggered Catalog IDF
+# E23-B: Exhaustion-Triggered Catalog IDF
 
 ## Status
 
@@ -7,7 +7,7 @@ of the experiment is the mechanism it exposed, which also explains why E8 and
 E10 failed.
 
 - Date: 2026-08-30
-- Baseline: E13-C, `Agent(state_model="ledger", no_gain_probe=1)`,
+- Baseline: E22-C, `Agent(state_model="ledger", no_gain_probe=1)`,
   full `0.868714`, validation `0.867378`
 - Prior diagnostic: [rank-margin](rank-margin-diagnostic.md)
 
@@ -20,7 +20,7 @@ word outrank a ubiquitous one.
 
 E8 rejected catalog IDF applied unconditionally, and E10 rejected it routed on
 an override signal. This experiment applies it on a third signal: the
-information-gain counter from E13-C. The reasoning was that while information
+information-gain counter from E22-C. The reasoning was that while information
 is still arriving, any term may yet become decisive, so discounting early risks
 discarding a constraint the customer has not finished expressing; once the
 counter says nothing new has arrived, the term list is final and rarity can be
@@ -92,7 +92,7 @@ well. Their reports recorded the result; none of them recorded this cause.
 
 Stage 0 measured that **removing** those same template words costs two
 intent_override sessions, because they widen the FTS5 `MATCH` expression and
-change which hundred candidates enter the pool. E15 measures that **weighting**
+change which hundred candidates enter the pool. E23-B measures that **weighting**
 them is worse than not weighting anything.
 
 Taken together: the template words must be present in the query and must not be
@@ -104,7 +104,7 @@ junk would change what IDF does, and vice versa.
 ## Decision
 
 Reject. The `exhaustion_idf` parameter and `_effective_term_weights` were
-removed; `starter/agent.py` is byte-identical to E13-C. The optional `idf`
+removed; `starter/agent.py` is byte-identical to E22-C. The optional `idf`
 argument on `rerank_candidates` stays, per the T13 precedent.
 
 The honest conclusion for the next experiment is stronger than the result: no

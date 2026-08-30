@@ -130,7 +130,7 @@ that is not derived from an observable difference must not be added.
 
 ## Chosen Approach
 
-### Stage 0: correctness fixes on the existing structure (E13-A) -- MEASURED, REJECTED
+### Stage 0: correctness fixes on the existing structure (E22-A) -- MEASURED, REJECTED
 
 Run on 2026-08-30. Result: rejected as specified. Of the three fixes, one
 regressed validation by `-0.001198`, one by `-0.007573`, and one was exactly
@@ -159,7 +159,7 @@ mis-attributed a gain once: E5 and E6 were credited to slot-aware memory logic,
 and T14 later showed the gain belonged to the gazetteer contamination fix.
 Running Stage 0 and Stage 1 together would repeat that error.
 
-### Stage 1: the constraint ledger and query projection (E13-B) -- MEASURED, RETAINED
+### Stage 1: the constraint ledger and query projection (E22-B) -- MEASURED, RETAINED
 
 Run on 2026-08-30. Validation `0.844722 -> 0.853190`, full `0.841838 ->
 0.854664`, Intent Override HitRate@10 `0.933333 -> 1.000000`, with Buying,
@@ -198,7 +198,7 @@ The override rules keep E11's semantics exactly: a slot named by the override
 message is superseded, `DURABLE_SLOTS` survive, and entries with
 `first_turn > 1` survive. Only the representation changes.
 
-### Stage 2: weighted projection and an information-gain stop (E13-C) -- MEASURED, SPLIT
+### Stage 2: weighted projection and an information-gain stop (E22-C) -- MEASURED, SPLIT
 
 Run on 2026-08-30. Term weighting by source is **rejected**: validation peaks at
 `answered_weight = 1.0`, the off position, with both neighbours below it. The

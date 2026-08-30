@@ -1,4 +1,4 @@
-# E16: Implicit-Rejection Reranking
+# E24: Implicit-Rejection Reranking
 
 ## Status
 
@@ -11,8 +11,8 @@ Validation TechnicalScore `0.867378 -> 0.884128` (`+0.016750`), full
 `0.868714 -> 0.876689` (`+0.007975`), HitRate@10 `0.980 -> 0.995`.
 
 - Date: 2026-08-30
-- Baseline: E13-C, `Agent(state_model="ledger", no_gain_probe=1)`
-- Prior attempts on the same failure: [E15](exhaustion-triggered-idf.md) rejected,
+- Baseline: E22-C, `Agent(state_model="ledger", no_gain_probe=1)`
+- Prior attempts on the same failure: [E23-B](exhaustion-triggered-idf.md) rejected,
   and widening the candidate pool ruled out by pool-position data
 
 ## The failure this addresses
@@ -22,7 +22,7 @@ the information-gain counter runs for six consecutive turns while the agent
 returns the same ten products. Three of the four have the target in the
 candidate pool the whole time, at positions 11, 17 and 28.
 
-E15 tried to fix this by reweighting terms and failed. Widening the pool was
+E23-B tried to fix this by reweighting terms and failed. Widening the pool was
 ruled out without a run: it moves the three reachable targets further away
 (`11 -> 13`, `17 -> 37`, `28 -> 40`) and cannot reach the fourth, which sits at
 position 187 even in a 2,000-item pool.
@@ -113,7 +113,7 @@ The whole difference between the retained weight and the saturated one is
 
 ## Decision
 
-Retain as **E16** at `rejection_weight = 1.0`. Recommended configuration:
+Retain as **E24** at `rejection_weight = 1.0`. Recommended configuration:
 
 ```python
 Agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)

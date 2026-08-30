@@ -21,7 +21,6 @@ like any other active entry.
 
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -38,6 +37,11 @@ SUPERSEDED = "superseded"
 # so a per-term confidence would be 1.0 for every entry.
 VOLUNTEERED = "volunteered"
 ANSWERED = "answered"
+# Recorded but not scored. Weighting entries by source was measured and
+# rejected (E13-C1: the validation optimum was the off position), and the
+# weighting hook was dropped when the reranker was restructured upstream.
+# The field stays because it is the one honest basis for such a weighting if
+# a later experiment finds a use for it.
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 
@@ -164,34 +168,6 @@ class ConstraintLedger:
             for entry in self._entries.values()
             if entry.status == ACTIVE
         ][:limit]
-
-    def projection_weights(
-        self,
-        turn: int,
-        answered_weight: float = 1.0,
-        decay_lambda: float = 0.0,
-    ) -> dict[str, float]:
-        """A multiplier per projected term: source prior times freshness.
-
-        The source prior is the only honest way to weight these entries
-        differently. Extraction is deterministic gazetteer matching, so a
-        per-term confidence would be 1.0 everywhere; where the constraint came
-        from is observable from the transcript alone.
-
-        `decay_lambda` defaults to 0, which makes freshness exactly 1. Sessions
-        end at a median of under three turns and the simulator has no mechanism
-        by which a preference weakens gradually, so there is nothing in the
-        public set from which to fit a decay rate. The term exists so the shape
-        is stated, not because it is claimed to help.
-        """
-        weights: dict[str, float] = {}
-        for entry in self._entries.values():
-            if entry.status != ACTIVE:
-                continue
-            base = answered_weight if entry.source == ANSWERED else 1.0
-            freshness = math.exp(-decay_lambda * max(turn - entry.last_turn, 0))
-            weights[entry.surface] = base * freshness
-        return weights
 
     def slots_view(self) -> dict[str, dict[str, int]]:
         """Active slotted entries in the shape the slot-based agent reports.

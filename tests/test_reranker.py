@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from starter.reranker import rerank_candidates
+from starter.reranker import rerank_candidates, extract_bigrams
 
 
 class RerankerTest(unittest.TestCase):
@@ -127,3 +127,205 @@ class PopularityPriorTest(unittest.TestCase):
             rerank_candidates(["leather", "buckle"], candidates, 2),
             ["OBSCURE", "POPULAR"],
         )
+
+class PricePresencePriorTest(unittest.TestCase):
+    def test_priced_candidate_wins_when_everything_else_ties(self) -> None:
+        # 89% of public targets carry a price against 21% of the catalog, and
+        # the gap holds within popularity bands. A listing with a price is an
+        # active listing, and only active listings get purchased.
+        candidates = [
+            {"parent_asin": "NO-PRICE", "title": "leather belt", "rating_number": 500},
+            {"parent_asin": "PRICED", "title": "leather belt", "rating_number": 500,
+             "has_price": True},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, price_weight=2.0),
+            ["PRICED", "NO-PRICE"],
+        )
+
+    def test_price_never_outweighs_a_missing_constraint(self) -> None:
+        candidates = [
+            {"parent_asin": "PRICED-WEAK", "title": "leather", "has_price": True},
+            {"parent_asin": "UNPRICED-EXACT", "title": "leather belt buckle"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt", "buckle"], candidates, 2, price_weight=2.0),
+            ["UNPRICED-EXACT", "PRICED-WEAK"],
+        )
+
+    def test_default_price_weight_changes_nothing(self) -> None:
+        candidates = [
+            {"parent_asin": "NO-PRICE", "title": "leather belt", "rating_number": 500},
+            {"parent_asin": "PRICED", "title": "leather belt", "rating_number": 500,
+             "has_price": True},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2),
+            ["NO-PRICE", "PRICED"],
+        )
+
+class AverageRatingPriorTest(unittest.TestCase):
+    def test_better_rated_candidate_wins_when_everything_else_ties(self) -> None:
+        candidates = [
+            {"parent_asin": "MEDIOCRE", "title": "leather belt",
+             "rating_number": 500, "average_rating": 3.5},
+            {"parent_asin": "WELL-RATED", "title": "leather belt",
+             "rating_number": 500, "average_rating": 4.8},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, rating_weight=2.0),
+            ["WELL-RATED", "MEDIOCRE"],
+        )
+
+    def test_missing_average_rating_is_treated_as_unrated_not_as_an_error(self) -> None:
+        candidates = [
+            {"parent_asin": "RATED", "title": "leather belt", "average_rating": 4.5},
+            {"parent_asin": "UNRATED", "title": "leather belt"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, rating_weight=2.0),
+            ["RATED", "UNRATED"],
+        )
+
+    def test_default_rating_weight_changes_nothing(self) -> None:
+        candidates = [
+            {"parent_asin": "MEDIOCRE", "title": "leather belt", "average_rating": 3.5},
+            {"parent_asin": "WELL-RATED", "title": "leather belt", "average_rating": 4.8},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2),
+            ["MEDIOCRE", "WELL-RATED"],
+        )
+
+class SemanticScoreTest(unittest.TestCase):
+    def test_semantic_score_can_flip_a_lexical_tie(self) -> None:
+        candidates = [
+            {"parent_asin": "LOW_SIM", "title": "leather belt"},
+            {"parent_asin": "HIGH_SIM", "title": "leather belt"},
+        ]
+        ranked = rerank_candidates(
+            ["leather", "belt"],
+            candidates,
+            2,
+            semantic_scores={"LOW_SIM": 0.1, "HIGH_SIM": 0.9},
+            semantic_weight=1.0,
+        )
+        self.assertEqual(["HIGH_SIM", "LOW_SIM"], ranked)
+
+    def test_missing_semantic_score_contributes_zero_not_a_crash(self) -> None:
+        candidates = [
+            {"parent_asin": "SCORED", "title": "leather belt"},
+            {"parent_asin": "UNSCORED", "title": "leather belt"},
+        ]
+        ranked = rerank_candidates(
+            ["leather", "belt"],
+            candidates,
+            2,
+            semantic_scores={"SCORED": 0.9},
+            semantic_weight=1.0,
+        )
+        self.assertEqual(["SCORED", "UNSCORED"], ranked)
+
+    def test_default_semantic_weight_leaves_ranking_unchanged(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "leather belt"},
+            {"parent_asin": "B", "title": "leather belt"},
+        ]
+        ranked = rerank_candidates(
+            ["leather", "belt"], candidates, 2, semantic_scores={"B": 0.9}
+        )
+        self.assertEqual(["A", "B"], ranked)
+
+
+class CompletenessBonusTest(unittest.TestCase):
+    def test_matching_every_required_term_outranks_more_individual_matches(self) -> None:
+        # MORE-HITS matches more individual query terms overall (three cheap
+        # feature-field words) and out-scores ALL-MATCH without the bonus --
+        # but it is missing "black" entirely, one of the three things a
+        # Buying customer actually asked for. ALL-MATCH satisfies every
+        # required term and should win once completeness is rewarded.
+        candidates = [
+            {
+                "parent_asin": "ALL-MATCH",
+                "title": "Black Leather Belt",
+                "categories": "", "features": "", "details": "", "store": "",
+                "description": "",
+            },
+            {
+                "parent_asin": "MORE-HITS",
+                "title": "Leather Belt",
+                "categories": "", "features": "everyday casual outdoor", "details": "",
+                "store": "", "description": "",
+            },
+        ]
+        query_terms = ["black", "leather", "belt", "everyday", "casual", "outdoor"]
+
+        without_bonus = rerank_candidates(query_terms, candidates, top_k=2)
+        self.assertEqual(["MORE-HITS", "ALL-MATCH"], without_bonus)
+
+        with_bonus = rerank_candidates(
+            query_terms,
+            candidates,
+            top_k=2,
+            required_terms={"black", "leather", "belt"},
+            completeness_bonus=4.0,
+        )
+        self.assertEqual(["ALL-MATCH", "MORE-HITS"], with_bonus)
+
+    def test_omitting_required_terms_leaves_ranking_unchanged(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "leather"},
+            {"parent_asin": "B", "title": "leather belt"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2, completeness_bonus=4.0),
+            ["B", "A"],
+        )
+
+
+class ExtractBigramsTest(unittest.TestCase):
+    def test_extracts_consecutive_word_pairs(self) -> None:
+        self.assertEqual(
+            extract_bigrams("Running shoe for men"),
+            ["running shoe", "shoe for", "for men"],
+        )
+
+    def test_single_word_has_no_bigrams(self) -> None:
+        self.assertEqual(extract_bigrams("shoe"), [])
+
+    def test_empty_text_has_no_bigrams(self) -> None:
+        self.assertEqual(extract_bigrams(""), [])
+
+
+class PhraseBonusTest(unittest.TestCase):
+    def test_exact_phrase_match_outranks_the_same_words_apart(self) -> None:
+        candidates = [
+            {"parent_asin": "APART", "title": "Running errands in a dress shoe"},
+            {"parent_asin": "PHRASE", "title": "Comfortable running shoe for men"},
+        ]
+        ranked = rerank_candidates(
+            ["running", "shoe"],
+            candidates,
+            2,
+            phrase_terms=["running shoe"],
+            phrase_weight=3.0,
+        )
+        self.assertEqual(["PHRASE", "APART"], ranked)
+
+    def test_omitting_phrase_terms_leaves_ranking_unchanged(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "running errands dress shoe"},
+            {"parent_asin": "B", "title": "running shoe"},
+        ]
+        without_phrase = rerank_candidates(["running", "shoe"], candidates, 2)
+        with_zero_weight = rerank_candidates(
+            ["running", "shoe"], candidates, 2, phrase_terms=["running shoe"], phrase_weight=0.0
+        )
+        self.assertEqual(without_phrase, with_zero_weight)
+
+    def test_single_word_message_contributes_no_phrase_bonus_without_crashing(self) -> None:
+        candidates = [{"parent_asin": "A", "title": "shoe"}]
+        ranked = rerank_candidates(
+            ["shoe"], candidates, 1, phrase_terms=extract_bigrams("shoe"), phrase_weight=3.0
+        )
+        self.assertEqual(["A"], ranked)

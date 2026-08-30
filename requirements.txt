@@ -1,0 +1,7 @@
+# starter/agent.py imports starter/dense.py unconditionally (semantic
+# reranking, E18, is on by default), so this is required just to import
+# the Agent, not only for the optional retrieval_mode="dense"/"rrf" paths
+# (E16/E17). scikit-learn pulls in scipy, joblib, and threadpoolctl
+# automatically -- no other dependency in this project needs pinning.
+scikit-learn==1.9.0
+numpy==2.2.6

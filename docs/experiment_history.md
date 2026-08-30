@@ -8,16 +8,44 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E16 Implicit-Rejection Reranking, with public HitRate@10
-> `0.995`, MRR `0.694964`, MTTC `2.465`, and TechnicalScore `0.876689`.
-> This is now the **constructor default**, because the organizer runs
-> `Agent(catalog_path)` with no further arguments: `python -m
-> evaluator.local_evaluator` reproduces `0.876689` with no flags. E11 is still
-> reachable explicitly as
-> `Agent(state_model="slots", no_gain_probe=None, rejection_weight=0.0)`.
-> The rejection weight is deliberately not the highest-scoring value; see T22. Constructor defaults remain
-> `state_model="slots"` and `no_gain_probe=None`, so an unflagged `Agent()`
-> still reproduces E11 at `0.841838`.
+> Current best: the merged line, with public HitRate@10 `0.995`, MRR
+> `0.776613`, MTTC `2.400`, and TechnicalScore `0.902484`. See E26 and T34.
+>
+> Two lines were developed in parallel and merged on 2026-08-30. E12-E21 came
+> from `feat/hs` and improved rank quality; E22-E25 came from
+> `experiment/constraint-ledger` and improved conversational coverage. Neither
+> knew about the other, so E22-E25 are numbered by merge order rather than by
+> date, and their `Delta` values are within-line against E11 rather than
+> against E21. The two turned out to be complementary: every metric in the
+> merged agent is at or better than the best of either side alone.
+>
+> Current best: E21 Price Presence Prior, with public HitRate@10 `0.980`,
+> MRR `0.756899`, MTTC `2.820`, and TechnicalScore `0.880670`.
+>
+> E21 was developed on `feat/hs` in parallel with E13-E20 and merged after
+> E20, so it is numbered after the branch it merged into rather than by the
+> date it was run. It stacks on E19 without moving HitRate@10 or any
+> scenario hit rate: the entire `+0.012194` is rank quality (MRR
+> `+0.040980`), which is what a tie-breaking prior is expected to buy.
+>
+> **E21 carries a documented transfer risk.** Under T25's coverage-stress
+> diagnostic its gain reverses: `+0.012194` on the official catalog,
+> `-0.020274` when target price coverage is cut to the catalog-wide rate.
+> No other retained layer reverses. Official metrics still select methods,
+> so E21 stands, but read T26 before relying on its margin.
+>
+> E19 Phrase (Bigram) Bonus remains the largest single-experiment gain
+> since E13: 2 sessions recovered, 0 lost, versus E18.
+>
+> E15 was reverted after review: its result is not an improvement on any
+> measurable metric (0/200 public sessions differ from E13). Its only
+> claimed value was an unverifiable bet that the private set phrases an
+> override differently than the public simulator's one fixed sentence --
+> real added state and logic for a risk that cannot be confirmed from here.
+> That is a judgment call about risk tolerance, not evidence of being
+> "better," and calling it a "clean win" during review overstated it.
+> Preserved on `review/narrow-phrase-independent-override-implementation`
+> in case that judgment call is revisited later.
 
   Follow the [experiment workflow](EXPERIMENT_WORKFLOW.md) before starting or
   recording another method.
@@ -47,15 +75,26 @@
 | E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
 | E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
 | E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
-| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | **Current best** | `52789c4` |
-| E13-A | Constraint ledger Stage 0 | Three override-state correctness fixes, measured separately | 103 | 0.965 | +0.000 | 0.662125 | 2.965 | 0.8035 | 0.841838 | +0.000000 | Reject 2 of 3; slot negation guard retained on correctness | Not committed |
-| E13-B | Constraint ledger Stage 1 | Append-only entries with status instead of deletion; query projected from active entries | 118 | **0.975** | +0.010 | **0.677881** | **2.810** | 0.8190 | **0.854664** | **+0.012826** | Keep | See branch |
-| E13-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
-| E13-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
-| E14-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
-| E15 | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
-| E16 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | **Current best** | See branch |
-| E17 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
+| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
+| E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E18 | `92d4714` |
+| E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
+| E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
+| E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Review branch |
+| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Review branch |
+| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | `b3e88b8` |
+| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | Superseded by E21 | `e9dc276` |
+| E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
+| E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | **Current best** | `fe86b63` |
+| E22-A | Constraint ledger Stage 0 | Three override-state correctness fixes, measured separately | 103 | 0.965 | +0.000 | 0.662125 | 2.965 | 0.8035 | 0.841838 | +0.000000 | Reject 2 of 3; slot negation guard retained on correctness | Not committed |
+| E22-B | Constraint ledger Stage 1 | Append-only entries with status instead of deletion; query projected from active entries | 118 | **0.975** | +0.010 | **0.677881** | **2.810** | 0.8190 | **0.854664** | **+0.012826** | Keep | See branch |
+| E22-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
+| E22-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
+| E23-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
+| E23-B | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
+| E24 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | **Current best** | See branch |
+| E25 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
+| E26 | Merged line | E12-E21 rank quality merged with E22-E25 conversational coverage | 195 | **0.995** | +0.015 | **0.776613** | **2.400** | **0.8600** | **0.902484** | **+0.021814** | **Current best** | See T34 |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -83,10 +122,21 @@
 | E9 Slot conflict resolution | 0.8750 | **0.9625** | **0.766667** | 0.9000 |
 | E10 Override-routed IDF | 0.8750 | 0.9625 | 0.733333 | 0.9000 |
 | E11 Popularity prior | 0.9500 | **1.0000** | **0.933333** | 0.9000 |
-| E13-A Stage 0 retained | 0.9500 | **1.0000** | 0.933333 | 0.9000 |
-| E13-B Constraint ledger | 0.9500 | **1.0000** | **1.000000** | 0.9000 |
-| E13-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
-| E16 Implicit-rejection reranking | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
+| E12 Phrase-independent override | 0.9500 | 0.9875 | **0.933333** | 0.9000 |
+| E13 Buying/Browsing routing | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
+| E14 Expected-value clarification | 0.9625 | 1.0000 | **0.966667** | 0.9000 |
+| E15 Narrow phrase-independent override | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
+| E16 Dense retrieval (standalone) | 0.6750 | 0.6750 | 0.633333 | 0.6000 |
+| E17 RRF hybrid retrieval | 0.9375 | 0.9750 | 0.900000 | 0.9000 |
+| E18 Semantic reranking score | **0.9625** | **1.0000** | **0.933333** | 0.9000 |
+| E19 Phrase (bigram) bonus | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
+| E20 Query-side stemming | 0.9375 | 0.9500 | 0.866667 | 0.9000 |
+| E21 Price presence prior | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
+| E22-A Stage 0 retained | 0.9500 | **1.0000** | 0.933333 | 0.9000 |
+| E22-B Constraint ledger | 0.9500 | **1.0000** | **1.000000** | 0.9000 |
+| E22-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
+| E24 Implicit-rejection reranking | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
+| E26 Merged line | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -519,7 +569,530 @@
   `0.9000` across every weight, so those sessions are limited by something else.
 - Commit: `52789c4`. Evidence: [popularity prior](../reports/experiments/popularity-prior.md).
 
-### T16: Coverage-stress dual evaluation (diagnostic environment)
+### T16: Phrase-independent override (rejected, design tradeoff)
+
+- Date: 2026-08-29
+- Origin: `_is_intent_override()` matches one literal sentence copied from the
+  local simulator's `behavior_for()` template. This was already flagged as a
+  limitation in T14/`slot-memory-and-retrieval-ablation.md`: the private set
+  is not guaranteed to phrase a change of mind the same way.
+- Hypothesis: a slot already holding one value, and the current message
+  supplying a *different* value for that same non-durable slot, is itself
+  evidence of a change of mind — independent of sentence wording.
+- Change: `_is_intent_override()` gains a second, additive path to `True`
+  (a same-slot conflict) alongside the existing literal-phrase check. The
+  override *mechanism* (which slots survive, which are cleared) is
+  unchanged; only the *trigger* is broadened.
+- New tests: 4, in `tests/test_conversation_state.py`
+  (`PhraseIndependentOverrideTest`) — new-behavior, two false-positive
+  guards, and a literal-phrase regression guard. All red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: HitRate@10 `0.960`, MRR `0.661292`, MTTC `3.005`, TechnicalScore
+  `0.838288` (E11 was `0.841838`, `-0.003550`).
+- Scenario: buying `0.9500` unchanged, browsing `1.0000 -> 0.9875` (one
+  session), intent_override `0.933333` unchanged, boundary `0.9000`
+  unchanged.
+- Root cause of the one regression, traced turn by turn on `public_0172`:
+  the gazetteer correctly mines `synthetic` as a **material** term, but the
+  simulator disclosed it in answer to a `feature` question, not a
+  `material` question. A later, real `material` answer (`cotton`) then
+  looks like a conflict with `synthetic` and triggers the broadened
+  override, which — correctly, by design — replaces the slot's contents and
+  drops `synthetic` from the search. The baseline kept both words and found
+  the target at rank 6; this version does not. This is a design weakness
+  (the rule cannot distinguish "new answer to the same question" from "new
+  answer to a different question that shares a gazetteer slot"), not an
+  implementation bug — the code does exactly what the rule says.
+- Decision: **Reject as the default.** The threshold set before
+  implementation (full-set TechnicalScore must not drop below `0.841838`)
+  is not met. The cost is small (one session) and the benefit (robustness
+  to a differently-worded override on the private set) is real but
+  unmeasurable on this public set, so this is a judgment call on risk
+  tolerance rather than a clean-cut rejection — left to the project owner.
+- Commit/branch: `review/phrase-independent-override-implementation`
+  (implementation and tests preserved, not merged into the default agent
+  configuration).
+- Limitations and next step: a narrower version — only trust the broadened
+  trigger when the conflicting slot is the one the agent's own previous
+  `ask_attribute` was actually about, rather than any accumulated slot —
+  would have avoided this exact false positive without losing the
+  paraphrase robustness. Deliberately not attempted here, to keep this
+  experiment to one idea; it requires plumbing the previous turn's
+  `ask_attribute` into `respond()`. Evidence:
+  [phrase-independent override](../reports/experiments/phrase-independent-override.md).
+
+### T17: Buying/Browsing routing (current best)
+
+- Date: 2026-08-29
+- Origin: `TechJam.docx` lists Intent-Aware Routing (Buying vs. Browsing) as
+  an unimplemented Layer 3 option. This project's own T13
+  (`slot-memory-and-retrieval-ablation.md`) had already measured that every
+  setting which helped Intent Override (pool 500, catalog IDF) hurt
+  Browsing, and named routing -- untried until now -- as the way out of
+  that tradeoff.
+- Hypothesis: a Buying customer discloses a concrete constraint on the
+  opening turn (`docs/competition_specification.md`). E1's field-weighted
+  reranker already rewards matching more terms, but treats every term
+  independently, so a candidate with several cheap, tangential matches can
+  outscore one that satisfies every constraint actually stated. Classify
+  the session once, at turn 1, and reward complete constraint matches only
+  on that path.
+- Change: `_classify_route()` in `starter/agent.py`, called once at turn 1
+  from the `message_slots` already computed that turn, cached per session.
+  Buying sessions pass `required_terms` (this turn's known non-durable slot
+  terms, intersected with the actual query terms) and
+  `completeness_bonus=4.0` to `rerank_candidates`; Browsing sessions pass
+  neither, which is a no-op by construction. `starter/reranker.py` gains
+  `required_terms`/`completeness_bonus`, read off the same per-term field
+  weights already computed for scoring -- no second text scan.
+- New tests: 10 (4 in `test_reranker.py::CompletenessBonusTest`, 6 in
+  `test_conversation_state.py::BuyingBrowsingRoutingTest`), covering
+  classification, freezing at turn 1, the reranker mechanism in isolation,
+  and an end-to-end ranking-flip test. All red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: HitRate@10 `0.970`, MRR `0.671744`, MTTC `2.930`, TechnicalScore
+  `0.847923` (E11 was `0.841838`, `+0.006085`).
+- Scenario: buying `0.9500 -> 0.9625` (one more session; MRR also rises,
+  `0.696905 -> 0.720952` -- items already found now rank higher too).
+  Browsing `1.0000`, intent_override `0.933333`, boundary `0.9000` are all
+  **identical to E11 down to the last digit** -- not a coincidence, the
+  intended isolation: those sessions classify as Browsing, where the bonus
+  never fires.
+- Decision: **Keep. New current best.** Every scenario holds or improves;
+  none regresses at all.
+- Commit/branch: `92d4714`, merged to `main` and pushed to the shared
+  remote.
+- Limitations and next step: the bonus weight (`4.0`) is one reasoned value,
+  not swept -- a validation-split sweep (same method as `popularity-prior.md`)
+  is the natural next step if a stronger weight is worth chasing. The
+  Buying/Browsing classifier only looks at the opening message; a session
+  that starts vague and firms up a hard constraint on turn 2 stays
+  Browsing-routed for its entire conversation, which is a direct, deliberate
+  reading of the scenario spec but is itself untested against a "reclassify
+  if a constraint firms up later" alternative. Evidence:
+  [buying/browsing routing](../reports/experiments/buying-browsing-routing.md).
+
+### T18: Expected-value clarification (rejected, close)
+
+- Date: 2026-08-29
+- Origin: `TechJam.docx`'s Layer 4 names this as the explicit next-step
+  option: score each attribute by how much it can "statistically eliminate
+  the most incorrect products," not yet implemented. The default `candidate`
+  policy's `coverage * diversity` heuristic ignores how a covered attribute's
+  values are actually *distributed*, and requires >= 2 distinct known values,
+  discarding an informative has-it/lacks-it split.
+- Hypothesis: scoring by Shannon entropy of each attribute's value
+  distribution over the Top-100 pool (with an explicit "unmatched" bucket)
+  is a more faithful "expected information gain" and should ask
+  better-targeted questions.
+- Change: new `_expected_value_order()` in `starter/clarification.py`, added
+  as a fourth policy string alongside `fixed`/`profile`/`candidate` -- the
+  default (`candidate`) is untouched pending the result.
+- New tests: 7, in `tests/test_clarification.py`
+  (`ExpectedValuePolicyTest`) — a tie-breaking comparison the coverage
+  heuristic cannot resolve, a zero-entropy skip, a has-it/lacks-it split the
+  heuristic structurally cannot consider, and an already-asked guard. All
+  red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_clarification_ablation --policies candidate expected_value
+  python -m evaluator.local_evaluator
+  ```
+
+- Result (full 200-session set): HitRate@10 `0.975` (+1 session over E13),
+  MRR `0.670619` (E13: `0.671744`), MTTC `3.060` (E13: `2.930`),
+  TechnicalScore `0.847486` (E13: `0.847923`, `-0.000437`).
+- Validation-split TechnicalScore (`techjam-clarification-v1`, 80 sessions,
+  the project's own decision rule for a clarification-policy choice):
+  `candidate` `0.850222` vs `expected_value` `0.848503` — `candidate` wins.
+  Development split (120 sessions) narrowly favors `expected_value`
+  (`0.846808` vs `0.846391`), so the two splits don't fully agree, but the
+  validation split is the one the workflow says to decide on.
+- Scenario: buying and browsing HitRate@10 unchanged, but MRR softens
+  slightly in both (buying `0.720952 -> 0.705327`, browsing
+  `0.665595 -> 0.659345`). Intent Override genuinely improves — one more
+  hit, `0.933333 -> 0.966667`, MRR `0.587685 -> 0.611296`. Boundary
+  HitRate@10 unchanged; MRR improves (`0.579444 -> 0.661111`) but MTTC
+  worsens (`3.6 -> 4.4`).
+- Interpretation: not "entropy doesn't work" — it demonstrably helps the
+  hardest scenario. With 160 of 200 sessions in Buying+Browsing, a small
+  per-session softening there outweighs a real win concentrated in the
+  30-session Intent Override scenario, in the aggregate score.
+- Decision: **Reject as the default.** Both the pre-registered threshold
+  and the project's own validation-split rule point the same direction, so
+  there's no ambiguity to resolve in its favor. Genuinely close — a
+  `0.0437%` full-set difference, within noise range for this sample size.
+- Commit/branch: `review/expected-value-clarification-implementation`
+  (implementation and tests preserved, not merged into the default).
+- Limitations and next step: route the *clarification policy* the same way
+  E13 routes retrieval — use `expected_value` only once an Intent Override
+  is detected (mirroring E10's already-tried override-routed pattern, but
+  applied at Layer 4 instead of Layer 2), so Buying/Browsing keep
+  `candidate` while Intent Override sessions get the policy that measurably
+  helps them. Not attempted here, to keep this experiment to one idea.
+  Evidence:
+  [expected-value clarification](../reports/experiments/expected-value-clarification.md).
+
+### T19: Narrow phrase-independent override (current best)
+
+- Date: 2026-08-30
+- Origin: T16's rejected broad attempt ("any new term for an already-known
+  non-durable slot is a conflict") regressed one Browsing session
+  (`public_0172`): a `feature`-turn's word ("synthetic") lexically matched
+  the `material` gazetteer slot, and a later, real `material`-turn's answer
+  ("cotton") was misread as overriding it. That report's own next-step
+  suggestion -- gate the trigger on `slot == previous ask_attribute` -- was
+  checked by hand *before* writing any code and found not to actually fix
+  the regression: at the exact moment "cotton" conflicts with "synthetic",
+  the agent's own `last_asked` genuinely *was* `"material"`. The problem
+  was never which question is being asked *now*; it's where the *existing*
+  conflicting value came from *earlier*.
+- Hypothesis: track, per slot-term, whether that term was ever recorded in
+  a legitimate, on-topic context (opening turn, volunteered unprompted, or
+  a direct answer to that slot's own question). Only compare a new term
+  against *legitimately-established* existing terms when deciding whether
+  to trigger an override; a term that arrived purely as an incidental side
+  effect of a different question can never itself become "the thing to
+  override."
+- Change: `starter/agent.py` gains `self._session_last_asked` (this turn's
+  `ask_attribute`, for the next turn to read) and
+  `self._session_slot_topic` (per slot-term, a bool: "ever legitimate",
+  OR-accumulated across every mention of that term so a later unrelated
+  repeat cannot erase earned legitimacy, or vice versa). `_is_intent_override()`
+  gains a conflict path that only considers legitimate existing terms.
+  `self._session_slots`'s existing shape and everything that reads it
+  (the durable/`arrived > OPENING_TURN` survival filter) is untouched --
+  purely additive, parallel state.
+- New tests: 11, in `tests/test_conversation_state.py`
+  (`NarrowPhraseIndependentOverrideTest`) -- the `public_0172`-shaped
+  contamination case reproduced in miniature, the recovered
+  unprompted-paraphrase capability, and the three safety nets carried over
+  from T16's rejected attempt. All red-green verified.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: **every metric and every scenario is identical to E13** on the
+  full 200-session public set. Verified at the session level, not just
+  aggregate: comparing `sessions[]` against E13's stored evidence JSON
+  gives 0 differing sessions out of 200.
+- Initial decision (later corrected on review): recorded here as "Keep, new
+  current best" on the reasoning that it closes a real, twice-documented
+  private-set risk (the literal-phrase dependency) at zero measured public
+  cost.
+- **Correction after review:** this is not an improvement on any
+  measurable metric -- 0/200 public sessions differ from E13, full stop.
+  The entire claimed value rests on an *unverifiable* assumption: that the
+  private set's 800 sessions phrase a change of mind differently than the
+  public simulator's one fixed sentence. There is no way to confirm this
+  from here (the private evaluator is not available), and if the private
+  set generates override messages the same way, this change does nothing
+  at all, ever, while still adding real state (`_session_last_asked`,
+  `_session_slot_topic`) and logic to maintain. Calling this a "clean win"
+  during initial reporting overstated it -- it is a judgment call about
+  risk tolerance with a real complexity cost and an unproven benefit, not
+  evidence of being better. **Reverted** at the project owner's direction;
+  `main` is back to E13 byte-for-byte
+  (`starter/agent.py`, `tests/test_conversation_state.py` checked out from
+  E13's commit `92d4714`).
+- Commit/branch: implementation preserved on
+  `review/narrow-phrase-independent-override-implementation` (renamed from
+  `experiment/narrow-phrase-independent-override`), not merged into `main`,
+  not pushed to the shared remote.
+- Limitations and next step: this is still narrower than "any conflict,
+  anywhere" -- a slot's first legitimate value can only be established on
+  the opening turn, when volunteered unprompted, or when directly asked
+  about. A genuine change of mind about something the customer stated
+  purely as contamination (never legitimately, on its own terms) still
+  cannot be detected. Whether to revisit this at all should wait for actual
+  evidence about private-set override phrasing, not another guess. Evidence:
+  [narrow phrase-independent override](../reports/experiments/narrow-phrase-independent-override.md).
+
+### T20: Dense retrieval, standalone (rejected; feeds E17)
+
+- Date: 2026-08-30
+- Origin: `TechJam.docx` Layer 1 lists Dense Retrieval, never attempted --
+  retrieval has always been lexical BM25. A full transformer embedding
+  model is feasible (network access works) but risks real per-turn latency
+  at scale; Latent Semantic Analysis (TF-IDF + Truncated SVD) is inference-
+  only after one startup fit, needs no downloaded weights, and is a real,
+  if older and weaker, dense-embedding technique.
+- Prediction recorded *before* running anything: this project's own
+  `slot-memory-and-retrieval-ablation.md` documents that the practice
+  simulator's disclosed constraints are sliced verbatim from the target's
+  own catalog metadata -- there is no organic paraphrasing in the public
+  set for a semantic method to bridge, so little to no gain was expected
+  here specifically.
+- Change: new `starter/dense.py::DenseIndex`. New `Agent(retrieval_mode=...)`
+  constructor argument; `"dense"` replaces BM25 candidate retrieval
+  entirely for this isolated test (not a proposed final design). Default
+  (`"bm25"`) is unchanged, confirmed by a dedicated regression test.
+- New tests: 14 (`tests/test_dense.py`, plus 2 agent-integration tests).
+  93/93 project tests pass. New `scripts/run_retrieval_mode.py`.
+- New dependency: `scikit-learn` (+ `scipy`, `joblib`, `threadpoolctl`).
+  First non-stdlib dependency this project has introduced.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --retrieval-mode dense --output reports/experiments/dense-retrieval.json
+  ```
+
+- Result: HitRate@10 `0.665`, MRR `0.534054`, MTTC `5.625`, TechnicalScore
+  `0.600216` (E13: `0.847923`). Matches the prediction: much weaker overall,
+  as expected, since this strips out E1/E11/E13's accumulated reranking,
+  popularity, and routing machinery to isolate retrieval quality alone.
+- **The actual finding:** session-by-session against E13 -- dense recovers
+  2 of E13's 6 public misses (`public_0052`, `public_0179`) that BM25 never
+  reaches at all, while losing 63 sessions BM25 gets right. Not strictly
+  worse everywhere: genuine complementary recall, exactly the signal RRF
+  fusion is designed to combine.
+- Startup cost: ~26s one-time `TruncatedSVD` fit (not per-turn), full
+  200-session eval ~32s after that.
+- Decision: **Reject as a standalone mode.** Proceed directly to E17 (RRF
+  fusion) using this experiment's dense index and complementarity evidence
+  -- this experiment's purpose was exactly to produce that evidence before
+  attempting fusion.
+- Commit/branch: `review/dense-retrieval-implementation` (local only, not
+  pushed).
+- Limitations and next step: `n_components` and `max_features` are
+  reasoned defaults, not swept. Evidence:
+  [dense retrieval](../reports/experiments/dense-retrieval.md).
+
+### T21: RRF hybrid retrieval (rejected; mechanism traced)
+
+- Date: 2026-08-30
+- Origin: `TechJam.docx` Layer 1's third option -- fuse BM25's and dense's
+  leaderboards by Reciprocal Rank Fusion rather than replacing one with the
+  other. T20 found real, if narrow, complementary signal (2 unique dense
+  hits) motivating a genuine attempt at fusion.
+- Change: new `starter/fusion.py::reciprocal_rank_fusion` (standard RRF,
+  `k=60`). `Agent(retrieval_mode="rrf")` fetches BM25's and dense's top-100
+  independently, fuses, and truncates to the top 100 by fused rank -- that
+  set feeds the existing reranker unchanged. `bm25` mode internals
+  refactored into a shared `_bm25_rank()` helper, confirmed byte-identical
+  by regression test.
+- New tests: 8 (6 in `tests/test_fusion.py`, 2 agent-integration). One
+  test's own premise was wrong on inspection -- RRF's convex scoring means
+  extreme ranks {1,3} score marginally higher than middling ranks {2,2}, a
+  real property, not a bug -- corrected before trusting it. 107/107 project
+  tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --retrieval-mode rrf --output reports/experiments/rrf-hybrid-retrieval.json
+  ```
+
+- Result: HitRate@10 `0.945`, MRR `0.665696`, MTTC `3.065`, TechnicalScore
+  `0.830909` (E13: `0.847923`, `-0.017014`). Session-by-session: 1 recovered
+  (`public_0071`), 6 lost. Net -5.
+- **Root cause, traced precisely** on `public_0040` (an E13 rank-1 hit):
+  the target enters BM25's own top-100 at turn 6, but only at rank 72 --
+  not in dense's top-100 at all. E13's reranker evidently promotes a
+  mediocre-BM25-rank-but-correct candidate very effectively once it's in
+  the pool (rank 72 -> rank 1, via field weighting + completeness bonus +
+  popularity). Under RRF, the candidate *pool itself* is truncated to 100
+  by fused rank *before* the reranker runs: other products' joint
+  BM25+dense agreement pushes the target's fused rank outside the top 100
+  entirely, so the reranker never sees it. Not a reranking failure --
+  retrieval discarding a correct candidate to make room for one whose only
+  qualification is agreement between two lists, one of which (dense, E16:
+  TechnicalScore `0.600` standalone) is meaningfully noisier here.
+- Decision: **Reject.** Confirms E16's own predicted risk exactly: fusing a
+  much weaker signal into a much stronger one can demote good candidates as
+  easily as promote missed ones. Net here: 6 lost for 1 recovered.
+- Commit/branch: `review/rrf-hybrid-retrieval-implementation` (local only,
+  not pushed).
+- Limitations and next step: take the **union** of both top-100 lists
+  (padding, not truncating) instead of truncating the fused ranking, so
+  dense can only ever add candidates BM25's own net missed, never displace
+  ones it already caught. Not attempted here, to test standard RRF as the
+  doc describes it first. Evidence:
+  [rrf hybrid retrieval](../reports/experiments/rrf-hybrid-retrieval.md).
+
+### T22: Semantic reranking score (current best)
+
+- Date: 2026-08-30
+- Origin: `TechJam.docx` Layer 2's Cross-Encoder Reranker option. A true
+  cross-encoder needs a transformer doing cross-attention between query and
+  candidate -- real per-turn latency risk at this project's scale (up to
+  100 candidates x 10 turns x 200 sessions). Tests the doc's *intent*
+  (semantic relevance beyond keyword-field-weight sums) using E16's
+  already-built, already-fast LSA vectors as a bi-encoder-style proxy --
+  explicitly disclosed as not a true cross-encoder.
+- Hypothesis: unlike E16/E17, this only adds a scoring term over the *same*
+  unchanged BM25 candidate set -- lower risk of E17's pool-eviction failure
+  mode, since retrieval itself doesn't change.
+- Change: `DenseIndex` gains `project()`/`vector_for()`. `rerank_candidates`
+  gains `semantic_scores`/`semantic_weight` (same pattern as
+  `popularity_weight`). `Agent` computes cosine similarity between the
+  query and each already-retrieved BM25 candidate, passed to the reranker.
+  New `SEMANTIC_WEIGHT = 1.0` default.
+- **Bug found and fixed mid-implementation:** defaulting `semantic_weight`
+  to nonzero meant the dense index now builds by default, and it crashed
+  (`ValueError: empty vocabulary`) on the empty-catalog fixture several
+  existing tests use to isolate conversation-state logic. Fixed with the
+  same principle `_load_gazetteer` uses: degrade to a no-op on a degenerate
+  input rather than fail the scored path. Caught by running the full test
+  suite before declaring green, not assumed.
+- New tests: 9 (4 `test_dense.py`, 3 `test_reranker.py`, 2 agent-integration).
+  One pre-existing test's name was corrected -- it claimed the default was
+  "unaffected," which stopped being true once the default weight changed;
+  rewritten to explicitly test `semantic_weight=0.0` opting back out.
+  109/109 project tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --semantic-weight 1.0 --output reports/experiments/semantic-reranking.json
+  python -m evaluator.local_evaluator   # confirms the plain default matches
+  ```
+
+- Triangulated three weights (not a full sweep): `0.5` -> TechnicalScore
+  `0.849534`; `1.0` -> `0.849882` (best); `2.0` -> `0.845118` (worse than
+  E13). Chose `1.0`.
+- Result: HitRate@10 `0.970` (unchanged), MRR `0.671744 -> 0.677607`, MTTC
+  `2.930 -> 2.920`, TechnicalScore `0.847923 -> 0.849882` (`+0.001959`).
+  **Zero sessions change hit/miss status** in either direction -- among the
+  194 already-correct sessions, 9 rank higher and 4 rank slightly lower.
+  Purely a ranking-quality effect, not a recall effect.
+- At weight `2.0`, the same failure mode E17 hit with RRF (demoting
+  genuinely correct candidates) reappears, just at the reranking stage
+  instead of retrieval -- consistent evidence that this project's dense/LSA
+  signal is real but must stay a *light* supplementary term.
+- Decision: **Keep. New current best.** `SEMANTIC_WEIGHT = 1.0` is now the
+  `Agent` default, confirmed with the plain, unmodified `Agent()`
+  construction.
+- Commit/branch: `b3e88b8`, merged to `main` and pushed to the shared
+  remote.
+- Limitations and next step: a full validation-split sweep (same method as
+  `popularity-prior.md`) could find a better weight than this 3-point
+  triangulation did. Evidence:
+  [semantic reranking](../reports/experiments/semantic-reranking.md).
+
+### T23: Phrase (bigram) bonus (current best)
+
+- Date: 2026-08-30
+- Origin: researched separately -- `TechJam.docx`'s remaining Layer 1/2
+  options are now all tried (E16/E17/E18). Classic, well-established IR
+  technique: E1's field-weighted reranker scores every query word
+  independently, so "running" and "shoe" scattered apart in a document
+  score identically to "running shoe" as an adjacent phrase.
+- Hypothesis: rewarding candidates whose text contains the customer's
+  adjacent word-pairs as a literal substring should improve precision.
+  Unlike E16/E17, this only adds a scoring term over the unchanged BM25
+  pool (same lower-risk shape as E18).
+- Change: new `starter/reranker.py::extract_bigrams` and
+  `phrase_terms`/`phrase_weight` on `rerank_candidates`. `starter/agent.py`
+  computes bigrams from the current turn's raw message each turn.
+- **Bug found and fixed, unrelated to this experiment's own logic:**
+  `scripts/run_retrieval_mode.py`'s `--semantic-weight` had a hardcoded
+  default of `0.0`, silently overriding `Agent`'s real default (`1.0`
+  since E18) whenever invoked without that flag -- stale since E18 changed
+  the default and the script wasn't updated. Fixed by defaulting both
+  `--semantic-weight` and the new `--phrase-weight` to `None`, meaning
+  "use `Agent`'s own default," so this class of staleness can't recur.
+- New tests: 10 (`ExtractBigramsTest`, `PhraseBonusTest`). 115/115 project
+  tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m scripts.run_retrieval_mode --phrase-weight 1.0 --output reports/experiments/phrase-bonus.json
+  python -m evaluator.local_evaluator   # confirms the plain default matches
+  ```
+
+- Triangulated three weights on top of E18's `semantic_weight=1.0`: `0.5`
+  -> TechnicalScore `0.855221`; `1.0` -> `0.868476` (best); `2.0` ->
+  `0.866975` (past the peak). Chose `1.0`.
+- Result: HitRate@10 `0.970 -> 0.980`, MRR `0.677607 -> 0.715919`, MTTC
+  `2.920 -> 2.815`, TechnicalScore `0.849882 -> 0.868476` (`+0.018594`) --
+  the largest single-experiment gain since E13. **2 sessions recovered**
+  (`public_0161`, `public_0179`), **0 lost**.
+- Decision: **Keep. New current best.** `PHRASE_WEIGHT = 1.0` is now the
+  `Agent` default, confirmed with the plain, unmodified `Agent()`
+  construction. The size of this gain suggests bag-of-words scoring really
+  was leaving precision on the table for phrase-shaped constraints, not a
+  dataset-specific quirk.
+- Commit/branch: `e9dc276`, merged to `main` and pushed to the shared
+  remote.
+- Limitations and next step: a full validation-split sweep could find a
+  better weight than this 3-point triangulation. Evidence:
+  [phrase bonus](../reports/experiments/phrase-bonus.md).
+
+### T24: Query-side stemming (rejected, mechanism traced -- 5th of 5 requested experiments)
+
+- Date: 2026-08-30
+- Origin: researched separately. `analysis/gazetteer.py::normalize_term`
+  already singularizes matched vocabulary terms, but only on the gazetteer
+  slot-extraction path. FTS5's `unicode61` tokenizer does no stemming on
+  either the index or query side, so a customer saying "shoes" cannot
+  match a catalog title that only says "shoe."
+- Hypothesis (recorded before implementation, and the part that turned out
+  wrong): adding each query term's singular form as an *extra* OR-term is
+  "a pure superset expansion... essentially risk-free," since no existing
+  term is ever removed.
+- Change: new `starter/stemming.py::expand_with_stems`, reusing
+  `normalize_term`. Applied to the FTS5 match expression and the
+  reranker's query terms; not to the stored accumulated term list.
+- New tests: 5 (4 `test_stemming.py`, 1 agent-integration). 126/126
+  project tests pass before the evaluator run.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Result: HitRate@10 `0.980 -> 0.930`, MRR `0.677607 -> 0.666079`
+  (comparison MRR shown against E19), MTTC `2.815 -> 3.170`, TechnicalScore
+  `0.868476 -> 0.821424` (`-0.047052`). Session-by-session: 2 recovered, 12
+  lost. Net -10.
+- **Root cause, traced precisely on `public_0028`:** without stemming, the
+  target sits at BM25 rank 95 of 100 from turn 3 onward -- barely inside
+  the pool. With stemming, the query gains `case`/`organizer`/`wallet`/
+  `matter` as extra terms; the target falls out of the top 100 entirely.
+  **The "risk-free superset" hypothesis was wrong**: retrieval is
+  `... MATCH ? ORDER BY bm25(...) LIMIT 100`, a fixed-size window, not an
+  unbounded list. Adding OR-terms doesn't just add ways for the true
+  target to match -- it makes *more of the other 50,000 products* qualify
+  and compete for the same 100 slots. A term is only actually risk-free to
+  add if it doesn't change who else qualifies, which query expansion does
+  not guarantee. This is the same fundamental failure mode E17 found with
+  RRF fusion (a borderline-but-correct candidate evicted before the
+  reranker runs), reached here by a completely different mechanism
+  (broadening one query's match criteria, not merging two ranked lists).
+- Decision: **Reject.** Confirms, via a second independent mechanism, the
+  same lesson E17 already taught: this project's fixed-size retrieval
+  cutoff is more fragile to *any* recall-broadening change than it first
+  appears.
+- Commit/branch: `review/query-stemming-implementation` (implementation
+  and tests preserved, not merged into the default).
+- Limitations and next step: a version that only expands terms *within* an
+  already-retrieved candidate's scoring (matching E18/E19's shape --
+  reranking-only, not retrieval-broadening) would avoid this exact failure
+  mode; not attempted here, to test the direct approach first. Evidence:
+  [query-side stemming](../reports/experiments/query-stemming.md).
+
+### T25: Coverage-stress dual evaluation (diagnostic environment)
 
 - Date: 2026-08-30.
 - Commands: `python -m scripts.build_coverage_stress_catalog` and
@@ -557,7 +1130,117 @@
   [design](designs/2026-08-29-coverage-stress-dual-evaluation-design.md), and
   [plan](plans/2026-08-29-coverage-stress-dual-evaluation.md).
 
-### T17: Constraint ledger Stage 0, override-state correctness (rejected)
+**Re-run against E19 (the current best as of this merge)**, using this same
+tool unmodified (`python -m scripts.run_dual_catalog_evaluation`): official
+HitRate@10 `0.980`, MRR `0.715919`, TechnicalScore `0.868476`; coverage-stress
+HitRate@10 `0.980` (**0/200 sessions change hit/miss status, in any
+scenario**), MRR `0.730494`, TechnicalScore `0.873848` (`+0.005372`). Same
+pattern as the original E11 run: a small positive delta, no scenario
+regresses. E13/E18/E19's added layers do not introduce new sensitivity to
+sparser metadata. Evidence:
+[E19 validation result](../reports/experiments/coverage-stress-post-e19-validation.json).
+
+### T26: Price presence prior (current best)
+
+- Date: 2026-08-29 (run), merged and re-measured on the E19 stack
+  2026-08-30.
+- Numbering note: developed on `feat/hs` in parallel with E13-E20, before
+  those existed locally. Its original standalone result was measured on the
+  E11 stack (TechnicalScore `0.841838` -> `0.858595`). Every number below is
+  the post-merge re-measurement on top of E19, which is the only comparison
+  that describes this tree.
+- Origin: the two catalog fields E11 left unused. `price` and
+  `average_rating` were both measured against the targets before either was
+  weighted.
+- Measurement: 89.0% of the 200 public targets carry a price against 21.1%
+  of the 50,000-item catalog. The gap is not popularity in disguise --
+  inside the catalog's top popularity decile, where 173 of 200 targets
+  already sit, only 31.6% of products are priced against 89.0% of targets.
+  A priced listing is an active listing, and only active listings get
+  purchased.
+- Change: `_has_price` / `_average_rating` in `starter/reranker.py` and
+  `price_weight` / `rating_weight` on `rerank_candidates`;
+  `starter/agent.py` collects both fields during index construction into
+  their own dicts, leaving the FTS5 `bm25()` column weights untouched.
+  Presence only -- the price value is never read. A bonus, never a filter:
+  11% of targets have no price, so excluding unpriced candidates would make
+  those sessions unwinnable.
+- New tests: 6 (`PricePresencePriorTest`, `AverageRatingPriorTest`).
+  143/143 project tests pass.
+- Commands:
+
+  ```powershell
+  python -m unittest discover -s tests -v
+  python -m evaluator.local_evaluator
+  ```
+
+- Weight re-swept on the merged stack, not carried over. Validation is the
+  80-session held-out split (`techjam-clarification-v1`):
+
+  | Price weight | Validation | Full | HitRate@10 | MRR |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 0.0 (E19) | 0.883582 | 0.868476 | 0.980 | 0.715919 |
+  | 1.0 | 0.892926 | 0.873253 | 0.980 | 0.728177 |
+  | **2.0** | **0.895201** | **0.880670** | 0.980 | **0.756899** |
+  | 3.0 | 0.894515 | 0.878848 | 0.980 | 0.749825 |
+  | 5.0 | 0.892311 | 0.871899 | 0.975 | 0.736331 |
+
+  Validation and full agree on `2.0` on this stack. They did not agree on
+  the pre-merge E11 stack, where validation favoured `3.0` and `2.0` was
+  chosen as the point all three splits agreed on; the merge removed that
+  disagreement rather than creating it.
+- Result: HitRate@10 `0.980 -> 0.980`, MRR `0.715919 -> 0.756899`, MTTC
+  `2.815 -> 2.820`, TechnicalScore `0.868476 -> 0.880670` (`+0.012194`).
+  **No scenario hit rate moves** (Buying `0.9875`, Browsing `1.0000`,
+  Intent Override `0.933333`, Boundary `0.9000`), and MTTC is `0.005`
+  worse. The entire gain is MRR.
+- Decision: **Keep. New current best.** `PRICE_WEIGHT = 2.0` is the `Agent`
+  default. The gain being pure MRR is consistent with the mechanism: E19's
+  phrase bonus decides which candidates surface, and the price prior orders
+  the ones that surface tied.
+- `RATING_WEIGHT` ships at `0.0`. The rating prior is implemented and
+  unit-tested but disabled: once popularity is controlled for, the
+  target/catalog rating gap collapses from `0.285` to `0.084`, and its two
+  splits disagree about the weight. It was never swept jointly with price,
+  so the standalone rating numbers are not a guide for enabling it on top
+  of price `2.0`.
+- Commit/branch: `fe86b63` on `feat/hs`.
+- **Coverage-stress result: the prior's sign reverses.** Run through T25's
+  diagnostic (2026-08-30). The stress build masks `price` on 136 of 178
+  priced targets, leaving 42, while masking `rating_number` on **zero**
+  (100% catalog coverage), so the popularity prior is untouched and the
+  whole delta is attributable to price.
+
+  | Catalog | E19 (price 0.0) | E21 (price 2.0) | Price prior gain |
+  | --- | ---: | ---: | ---: |
+  | Official | 0.868476 | **0.880670** | **+0.012194** |
+  | Coverage-stress | 0.873848 | 0.853574 | **-0.020274** |
+
+  Validation agrees and is sharper: `+0.011619` official, `-0.027275`
+  stress. This is not a signal that weakens -- a vanishing signal would
+  land near zero. It **inverts**: with only 42 targets priced, the flat
+  `2.0` bonus systematically promotes non-target priced candidates above
+  the 136 targets whose price was stripped. It is also the only
+  measurement in which the price prior moves HitRate@10 at all: `0.980 ->
+  0.965` under stress, **3 sessions lost** (2 Buying, 1 Browsing) that E19
+  finds on the same catalog. Boundary and Intent Override are unchanged.
+- Limitations: the 89%/21% price gap is a property of how the public set
+  was built, and the two catalogs bracket the unknown private set. If the
+  800 private targets are priced like the public ones (89%), E21 is worth
+  `+0.012194`; if they are priced like the catalog (21%), it costs
+  `-0.020274` -- a downside roughly 1.7x the upside in magnitude. Official
+  metrics still select methods (see T25: stress is a diagnostic and does
+  not replace the official score), so E21 stands as current best, but its
+  margin is conditional on a property of how the public set was built in a
+  way no other retained layer's is. `PRICE_WEIGHT` should not be re-tuned
+  against the stress catalog: T25 warns that diagnostic can be overfit by
+  repeated use, and sweeping against it would convert an independent check
+  into another fitted split. Evidence:
+  [price and rating priors](../reports/experiments/price-rating-prior.md),
+  [E21 weight sweep](../reports/experiments/price-prior-e21.json),
+  [E21 coverage-stress](../reports/experiments/coverage-stress-e21.json).
+
+### T27: Constraint ledger Stage 0, override-state correctness (rejected)
 
 - Date: 2026-08-30
 - Hypothesis: `scripts/trace_session` showed that 26 of 30 intent_override
@@ -583,7 +1266,7 @@
   sit near the noise floor of a 200-session set.
 - Evidence: [Stage 0 report](../reports/experiments/constraint-ledger-stage0.md).
 
-### T18: Constraint ledger Stage 1, append-only state and query projection (keep)
+### T28: Constraint ledger Stage 1, append-only state and query projection (keep)
 
 - Date: 2026-08-30
 - Change: `_session_terms` removed from the scored path. Every token becomes a
@@ -613,10 +1296,10 @@
   reproduces E11 at `0.841838` / `0.844722`.
 - Evidence: [Stage 1 report](../reports/experiments/constraint-ledger-stage1.md).
 
-### T19: Constraint ledger Stage 2, weighting and the information-gain probe
+### T29: Constraint ledger Stage 2, weighting and the information-gain probe
 
 - Date: 2026-08-30
-- E13-C1, term weighting by source: the ledger records whether a constraint was
+- E22-C1, term weighting by source: the ledger records whether a constraint was
   volunteered or answered; `answered_weight` scales the latter in the reranker.
   Validation by weight: `0.6` `0.836582`, `1.0` (off) `0.853190`, `1.2`
   `0.851524`, `1.5` `0.850040`. The optimum is the off position on both sides.
@@ -624,7 +1307,7 @@
   as no-ops at their defaults, per the T13 precedent that kept `idf`.
   `decay_lambda` stays `0` and was never swept: the public set contains no
   signal from which to fit a decay rate.
-- E13-C, information-gain probe: retrieval is a pure function of the projected
+- E22-C, information-gain probe: retrieval is a pure function of the projected
   terms, so a turn adding no active entry cannot change the ranking. After `K`
   consecutive such turns the agent asks an open question instead of continuing
   down the attribute order. Validation by threshold: `0` `0.858051`, `1`
@@ -638,7 +1321,7 @@
 - Boundary moves from `0.900000` to `1.000000`. It had been unchanged through
   every popularity weight in T15 and through Stages 0 and 1. A boundary session
   is one where every reply adds nothing, which is exactly the probe's trigger.
-- Dead turns: `163/586` at E11, `140/557` at E13-B, `85/504` at E13-C. The count
+- Dead turns: `163/586` at E11, `140/557` at E22-B, `85/504` at E22-C. The count
   of sessions containing a dead turn is unchanged at 57, correctly: the probe
   cannot prevent the first one, because that turn is the signal.
 - Limitation: this is the experiment most exposed to the simulator. The gain
@@ -646,10 +1329,10 @@
   constraints, which T9 documented and warned may not hold privately. The
   mechanism is a general strategy; the size of the gain is not guaranteed to
   transfer. If the private simulator treats `other` like any other attribute,
-  this degrades toward E13-B rather than breaking.
+  this degrades toward E22-B rather than breaking.
 - Evidence: [Stage 2 report](../reports/experiments/constraint-ledger-stage2.md).
 
-### T20: Rank-margin diagnostic and the catalog quality prior (rejected)
+### T30: Rank-margin diagnostic and the catalog quality prior (rejected)
 
 - Date: 2026-08-30
 - Purpose: with HitRate@10 at `0.980`, decide whether the remaining effort
@@ -665,7 +1348,7 @@
 - Of 40 sessions hitting at rank 2 or 3, 23 are decided by popularity rather
   than by matching. Median score gap to rank 1 is `0.669`, minimum `0.003`, and
   23 of 40 gaps are below one field-weight unit.
-- E14-A: `average_rating` has full catalog coverage and appeared in no scored
+- E23-A: `average_rating` has full catalog coverage and appeared in no scored
   path. Target median sits at the 66.8th catalog percentile against the 99.5th
   for `rating_number`; only 16/200 targets rate below 4.0 against 32.6% of the
   catalog. Validation by weight: `0.0` `0.867378`, `0.5` `0.865258`, `1.0`
@@ -680,19 +1363,19 @@
   the clean gazetteer and ledger is a hypothesis worth testing, not a prediction.
 - Evidence: [rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md).
 
-### T21: Exhaustion-triggered catalog IDF (rejected, with a mechanism)
+### T31: Exhaustion-triggered catalog IDF (rejected, with a mechanism)
 
 - Date: 2026-08-30
 - Hypothesis: the three in-pool Buying misses all carry hard constraints made
   of generic material words, and the reranker weights every term identically.
   E8 rejected catalog IDF applied unconditionally and E10 rejected it routed on
-  an override signal; this applies it on a third signal, the E13-C
+  an override signal; this applies it on a third signal, the E22-C
   information-gain counter, which is a perfect predictor of failure on the
   public set. The reasoning was that discounting a term while information is
   still arriving risks discarding a constraint the customer has not finished
   expressing, whereas once the counter fires the term list is final.
 - Result: HitRate@10 `0.980`, MRR `0.698381`, MTTC `2.540`, TechnicalScore
-  `0.868714` at thresholds 1 and 2 alike, identical in every digit to E13-C.
+  `0.868714` at thresholds 1 and 2 alike, identical in every digit to E22-C.
   **Zero of 200 sessions changed hit, hit turn, or rank.** The mechanism was
   verified to fire: per-term multipliers move from a flat `1.0` to a `0.93` to
   `7.42` spread on triggering turns.
@@ -710,26 +1393,26 @@
   quantities here, so any rarity-based weighting promotes conversational
   scaffolding over stated constraints. E8 and E10 recorded the outcome; none of
   the reports recorded this cause.
-- Interaction with T17: Stage 0 measured that *removing* those same template
+- Interaction with T27: Stage 0 measured that *removing* those same template
   words costs two intent_override sessions, because they widen the FTS5 `MATCH`
-  expression and change pool composition. T21 measures that *weighting* them is
+  expression and change pool composition. T31 measures that *weighting* them is
   worse than weighting nothing. The template words must therefore be present
   and unweighted, which is what the retained agent already does. Neither half
   is obvious alone, and a query-cleaning step cannot be evaluated independently
   of a weighting step.
 - Decision: reject. `exhaustion_idf` and `_effective_term_weights` removed;
-  `starter/agent.py` is byte-identical to E13-C. The optional `idf` argument on
+  `starter/agent.py` is byte-identical to E22-C. The optional `idf` argument on
   `rerank_candidates` stays, per T13.
 - Next step: no term-weighting scheme derived from catalog statistics is likely
   to work while the query contains evaluator phrasing. A measure computed over
-  product vocabulary alone would have to come first, and T17 shows that simply
+  product vocabulary alone would have to come first, and T27 shows that simply
   deleting the conversational vocabulary costs sessions.
 - Evidence: [exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md).
 
-### T22: Implicit-rejection reranking (current best)
+### T32: Implicit-rejection reranking (current best)
 
 - Date: 2026-08-30
-- Hypothesis: T20 and T21 both failed to move the four stuck sessions, and
+- Hypothesis: T30 and T31 both failed to move the four stuck sessions, and
   widening the pool was ruled out by pool-position data. What remained unused
   was negative evidence the conversation supplies for free: a shopper who saw
   ten products and kept talking has implicitly declined them, and returning the
@@ -786,12 +1469,12 @@
   unreachable at pool position 187. The penalty counts showings, not positions.
 - Evidence: [implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md).
 
-### T23: Stuck-path clarification policy (rejected on behaviour, not score)
+### T33: Stuck-path clarification policy (rejected on behaviour, not score)
 
 - Date: 2026-08-30
 - Question: when the information-gain counter says the conversation is stuck,
   the agent bypasses `select_attribute` entirely and round-robins over
-  `DEFAULT_ATTRIBUTE_ORDER`. That was the crudest decision in E16 and it was
+  `DEFAULT_ATTRIBUTE_ORDER`. That was the crudest decision in E24 and it was
   never tested. Routing the branch back through the candidate-aware policy,
   with the asked set dropped so it may repeat, should in principle pick a
   better question than blind rotation.
@@ -801,7 +1484,7 @@
   fires 10 times in 2 sessions (`2.0%`). 404 turns (`82.1%`) take the normal
   Layer-4 path and 78 (`15.9%`) are the first stuck turn, which asks `other`
   under both variants. Of the two affected sessions, `public_0020` is
-  unreachable at pool position 187 and `public_0179` hits either way. E16 had
+  unreachable at pool position 187 and `public_0179` hits either way. E24 had
   already all but eliminated the persistently-stuck state: before it, four
   sessions were stuck for six turns each.
 - Decided on behaviour instead. Under the policy variant a stuck agent asks the
@@ -819,25 +1502,80 @@
   is not laziness; it is the only variant tested that guarantees a stuck
   conversation stops asking one dead question.
 
+
+### T34: Merging the two parallel lines (current best)
+
+- Date: 2026-08-30
+- Two lines were developed in parallel without knowledge of each other.
+  `feat/hs` produced E12-E21, which improved rank quality: Buying/Browsing
+  routing, semantic reranking, the phrase bonus, the price prior.
+  `experiment/constraint-ledger` produced E22-E25, which improved
+  conversational coverage: the append-only constraint ledger, the
+  information-gain probe, the implicit-rejection penalty.
+- They turned out to be complementary rather than overlapping.
+
+  | Metric | E21 alone | E24 alone | Merged |
+  | --- | ---: | ---: | ---: |
+  | HitRate@10 | 0.980 | **0.995** | **0.995** |
+  | MRR | **0.756899** | 0.694964 | **0.776613** |
+  | MTTC | 2.820 | **2.465** | **2.400** |
+  | TechnicalScore | 0.880670 | 0.876689 | **0.902484** |
+
+  Every metric lands at or better than the best of either side. MRR is
+  `+0.019714` above E21 alone and MTTC `-0.065` below E24 alone, so the merge
+  is not simply the union of two disjoint gains.
+- Merge decisions worth recording:
+  - `starter/reranker.py` took the `feat/hs` version as the base. Its
+    restructuring (`_best_weight_by_term` extracted, `_match_score` signature
+    changed, five new parameter groups) is intact; `shown_penalty` was added as
+    one more subtracted term. The scoring function now carries seven terms.
+  - E22-C1's `term_weights` machinery was removed entirely rather than merged.
+    It was already a measured no-op and would have been dead code after the
+    restructuring.
+  - `_classify_route` had to be restored by hand. It sat inside the block the
+    state-advance refactor replaced, and the automatic merge dropped it
+    silently; 18 tests failed with `KeyError` until it was put back. A clean
+    automatic merge is not evidence that nothing was lost.
+  - E13's `required_terms` now reads `self._session_slots[session_id]` instead
+    of a local. Under the ledger that resolves to `slots_view()`, which returns
+    only **active** entries, so a revoked constraint is never required of a
+    candidate. Neither line had this behaviour alone; it falls out of the
+    combination.
+- Retrieval is unchanged. Both attempts to replace it were rejected on their
+  own line: E16 dense-only scored `0.600216` and E17 RRF `0.830909`, against
+  BM25's baseline. `retrieval_mode` stays `"bm25"`.
+- Automated tests: 143 and 137 separately, 195 merged, all passing.
+- **Verification caveat.** This score was measured with `scikit-learn 1.7.2`,
+  not the pinned `1.9.0`, because the environment available for the merge ran
+  Python 3.10 and `1.9.0` requires 3.11+. Test outcomes are version
+  independent, but E18's TruncatedSVD values may shift. The score must be
+  re-confirmed on a pinned environment before it is reported anywhere.
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
   | --- | ---: | --- |
-  | `test_evaluator.py` | 3 | Output normalization, miss turn, hidden-field materialization |
+  | `test_agent_reranking.py` | 3 | Agent reranks a larger candidate pool |
   | `test_bm25_diagnostics.py` | 3 | Rank, cutoff recall, first-turn measurement |
   | `test_catalog_profile.py` | 1 | Coverage meaning for empty collections |
-  | `test_reranker.py` | 4 | Complete-constraint priority, BM25 tie order, and optional catalog IDF |
-  | `test_agent_reranking.py` | 1 | Agent reranks a larger candidate pool |
-  | `test_conversation_state.py` | 14 | Accumulation, negation, slot-aware override, fallback behavior, policy selection and default |
+  | `test_catalog_variants.py` | 5 | Official/stress/dual mode resolution and rebuild-on-stale |
   | `test_clarification.py` | 3 | Fixed/profile difference, candidate grounded-attribute selection, and `other` probe |
-  | `test_clarification_ablation.py` | 1 | Multiple policies and splits on the real FTS5 evaluator |
+  | `test_clarification_ablation.py` | 2 | Multiple policies and splits on the real FTS5 evaluator |
+  | `test_conversation_state.py` | 40 | Accumulation, negation, slot-aware override, routing, fallback behavior, policy selection and default |
+  | `test_coverage_stress.py` | 11 | Deterministic masking, invariants, atomic writes, path-collision rejection |
+  | `test_dense.py` | 11 | TF-IDF + SVD index build, projection, and search |
+  | `test_dual_catalog_evaluation.py` | 2 | Official/stress/delta payload shape |
+  | `test_evaluator.py` | 3 | Simulator replies and metric aggregation |
+  | `test_experiment_results.py` | 2 | Split metrics, scenario metrics, TechnicalScore, and dual deltas |
   | `test_experiment_split.py` | 1 | Fixed split size, stratification, and no dev/validation overlap |
-  | `test_experiment_results.py` | 1 | Split metrics, scenario metrics, and TechnicalScore |
   | `test_gazetteer.py` | 16 | Vocabulary mining, normalization, coverage, and one-slot precedence |
+  | `test_popularity_sweep.py` | 2 | Weight/split/difficulty rows and dual-catalog deltas |
+  | `test_reranker.py` | 24 | Complete-constraint priority, BM25 tie order, catalog IDF, popularity, price, rating, semantic, and phrase terms |
+  | `test_session_viewer.py` | 9 | Transcript recording and viewer server |
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
-  | `test_ledger.py` | 27 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, weights, probe thresholds, slot/ledger equivalence |
+  | `test_ledger.py` | 30 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, probe thresholds, rejection penalty, slot/ledger equivalence |
 | `test_session_trace.py` | 13 | Override keep/drop classification, normalization loss, dead-turn detection, trace/evaluator agreement |
-| **Total** | **137** | Current full regression suite |
+| **Total** | **195** | Current full regression suite after the merge |
 
 The per-module counts for the older modules have drifted as experiments were
 added. The authoritative number is whatever `python -m unittest discover -s
@@ -910,6 +1648,7 @@ tests` reports.
 - [Balanced clarification experiment](../reports/experiments/balanced-clarification.md)
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
 - [Popularity prior](../reports/experiments/popularity-prior.md)
+- [Price and rating priors](../reports/experiments/price-rating-prior.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)
 - [Constraint ledger design](designs/2026-08-30-constraint-ledger-design.md)
 - [Constraint ledger Stage 0](../reports/experiments/constraint-ledger-stage0.md)

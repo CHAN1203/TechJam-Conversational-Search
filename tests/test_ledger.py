@@ -287,40 +287,6 @@ class InformationGainProbeTest(AgentFixture, unittest.TestCase):
         self.assertNotEqual("other", second["ask_attribute"])
 
 
-class LedgerWeightTest(unittest.TestCase):
-    def test_the_default_weight_is_one_for_every_active_term(self) -> None:
-        ledger = ConstraintLedger()
-        ledger.record(["belt"], {}, 1, VOLUNTEERED)
-        ledger.record(["leather"], {}, 2, ANSWERED)
-
-        self.assertEqual({"belt": 1.0, "leather": 1.0}, ledger.projection_weights(2))
-
-    def test_the_source_prior_scales_only_answered_constraints(self) -> None:
-        ledger = ConstraintLedger()
-        ledger.record(["belt"], {}, 1, VOLUNTEERED)
-        ledger.record(["leather"], {}, 2, ANSWERED)
-
-        weights = ledger.projection_weights(2, answered_weight=1.5)
-
-        self.assertEqual(1.0, weights["belt"])
-        self.assertEqual(1.5, weights["leather"])
-
-    def test_revoked_entries_carry_no_weight(self) -> None:
-        ledger = ConstraintLedger()
-        ledger.record(["belt", "closure"], {"belt": "category"}, 1, VOLUNTEERED)
-
-        ledger.apply_override({"material": ["leather"]}, DURABLE, OPENING)
-
-        self.assertEqual({"belt"}, set(ledger.projection_weights(2)))
-
-    def test_decay_is_off_unless_a_rate_is_supplied(self) -> None:
-        ledger = ConstraintLedger()
-        ledger.record(["belt"], {}, 1, VOLUNTEERED)
-
-        self.assertEqual(1.0, ledger.projection_weights(9)["belt"])
-        self.assertLess(ledger.projection_weights(9, decay_lambda=0.5)["belt"], 1.0)
-
-
 class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
     """E16: what the customer was shown and did not take is negative evidence."""
 
