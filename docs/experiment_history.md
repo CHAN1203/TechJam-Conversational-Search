@@ -1545,11 +1545,12 @@ sparser metadata. Evidence:
   own line: E16 dense-only scored `0.600216` and E17 RRF `0.830909`, against
   BM25's baseline. `retrieval_mode` stays `"bm25"`.
 - Automated tests: 143 and 137 separately, 195 merged, all passing.
-- **Verification caveat.** This score was measured with `scikit-learn 1.7.2`,
-  not the pinned `1.9.0`, because the environment available for the merge ran
-  Python 3.10 and `1.9.0` requires 3.11+. Test outcomes are version
-  independent, but E18's TruncatedSVD values may shift. The score must be
-  re-confirmed on a pinned environment before it is reported anywhere.
+- **Cross-environment verification.** The merge was measured on
+  `scikit-learn 1.7.2` (Python 3.10) and independently re-run on the pinned
+  `scikit-learn 1.9.0` (Python 3.12). Both produce `0.902484` with identical
+  HitRate@10 `0.995`, MRR `0.776613` and MTTC `2.400`, so E18's TruncatedSVD
+  values are stable across those versions and the reported score does not
+  depend on the environment it was measured in.
 
   ## 5. Current automated test coverage
 
