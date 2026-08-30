@@ -385,7 +385,7 @@ class BuyingBrowsingRoutingTest(ConversationStateTest):
     def test_buying_route_prefers_the_candidate_matching_every_constraint(self) -> None:
         # MORE-HITS turns up via extra, unrelated feature words but is missing
         # the color the customer actually asked for; ALL-MATCH satisfies every
-        # disclosed constraint. Only the Buying route should reward that.
+        # disclosed constraint.
         agent = self.build_agent(
             [
                 {
@@ -414,6 +414,73 @@ class BuyingBrowsingRoutingTest(ConversationStateTest):
 
         self.assertEqual(
             [{"parent_asin": "ALL-MATCH"}, {"parent_asin": "MORE-HITS"}],
+            response["recommendations"],
+        )
+
+
+    def test_browsing_route_also_prefers_the_candidate_matching_every_constraint(self) -> None:
+        # E13 rewarded completeness on Buying sessions only. A Browsing session
+        # opens vague, but by the time it answers a clarification question it
+        # has disclosed just as concrete a constraint, and E22 rewards
+        # satisfying it there too.
+        agent = self.build_agent(
+            [
+                {
+                    "parent_asin": "ALL-MATCH",
+                    "title": "Black Leather Belt",
+                    "categories": "Belts", "features": "", "details": {},
+                    "store": "Example", "description": [],
+                },
+                {
+                    "parent_asin": "MORE-HITS",
+                    "title": "Leather Belt",
+                    "categories": "Belts",
+                    "features": "everyday casual outdoor accessory gift",
+                    "details": {}, "store": "Example", "description": [],
+                },
+            ],
+            gazetteer={"category": {"belt": 2}, "color": {"black": 1}, "material": {"leather": 1}},
+        )
+
+        agent.respond("session", "I'm looking for belts", 1, 2)
+        self.assertEqual("browsing", agent._session_route["session"])
+        response = agent.respond(
+            "session", "black leather, something everyday casual outdoor", 2, 2
+        )
+
+        self.assertEqual(
+            [{"parent_asin": "ALL-MATCH"}, {"parent_asin": "MORE-HITS"}],
+            response["recommendations"],
+        )
+
+    def test_buying_only_completeness_is_still_reachable_for_ablation(self) -> None:
+        agent = self.build_agent(
+            [
+                {
+                    "parent_asin": "ALL-MATCH",
+                    "title": "Black Leather Belt",
+                    "categories": "Belts", "features": "", "details": {},
+                    "store": "Example", "description": [],
+                },
+                {
+                    "parent_asin": "MORE-HITS",
+                    "title": "Leather Belt",
+                    "categories": "Belts",
+                    "features": "everyday casual outdoor accessory gift",
+                    "details": {}, "store": "Example", "description": [],
+                },
+            ],
+            gazetteer={"category": {"belt": 2}, "color": {"black": 1}, "material": {"leather": 1}},
+        )
+        agent.completeness_all_routes = False
+
+        agent.respond("session", "I'm looking for belts", 1, 2)
+        response = agent.respond(
+            "session", "black leather, something everyday casual outdoor", 2, 2
+        )
+
+        self.assertEqual(
+            [{"parent_asin": "MORE-HITS"}, {"parent_asin": "ALL-MATCH"}],
             response["recommendations"],
         )
 

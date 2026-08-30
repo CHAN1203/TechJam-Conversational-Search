@@ -329,3 +329,81 @@ class PhraseBonusTest(unittest.TestCase):
             ["shoe"], candidates, 1, phrase_terms=extract_bigrams("shoe"), phrase_weight=3.0
         )
         self.assertEqual(["A"], ranked)
+
+
+class TermRecencyWeightTest(unittest.TestCase):
+    def test_a_later_term_can_outweigh_an_earlier_one(self) -> None:
+        # "leather" arrived on turn 1 with the category; "buckle" is the
+        # answer to a specific question on turn 4. Each candidate matches
+        # exactly one of them in the title, so only the per-term weight
+        # separates them.
+        candidates = [
+            {"parent_asin": "EARLY", "title": "leather bag"},
+            {"parent_asin": "LATE", "title": "buckle bag"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "buckle"], candidates, 2),
+            ["EARLY", "LATE"],
+        )
+        self.assertEqual(
+            rerank_candidates(
+                ["leather", "buckle"], candidates, 2,
+                term_weights={"leather": 1.0, "buckle": 1.6},
+            ),
+            ["LATE", "EARLY"],
+        )
+
+    def test_absent_terms_default_to_unit_weight(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "leather belt"},
+            {"parent_asin": "B", "title": "leather"},
+        ]
+        self.assertEqual(
+            rerank_candidates(
+                ["leather", "belt"], candidates, 2, term_weights={"leather": 1.0},
+            ),
+            ["A", "B"],
+        )
+
+    def test_omitting_term_weights_keeps_unweighted_scoring(self) -> None:
+        candidates = [
+            {"parent_asin": "A", "title": "leather belt"},
+            {"parent_asin": "B", "title": "leather"},
+        ]
+        self.assertEqual(
+            rerank_candidates(["leather", "belt"], candidates, 2),
+            rerank_candidates(["leather", "belt"], candidates, 2, term_weights={}),
+        )
+
+
+class PriorProofCompletenessTest(unittest.TestCase):
+    # The failure mode is narrower than "a popular item beats an exact match":
+    # if the exact match earns full title weight on every term it wins on the
+    # match score alone. It needs the *completing* term to land in a cheap
+    # field. Here EXACT matches "belt" only in description (weight 1.0).
+    #
+    #   POPULAR_PARTIAL  leather 4.0 + buckle 4.0            + 1.2*log1p(6614)=10.56  = 18.56
+    #   EXACT            leather 4.0 + buckle 4.0 + belt 1.0 + 1.2*log1p(10)  = 2.88
+    #                                              + completeness bonus
+    CANDIDATES = [
+        {"parent_asin": "POPULAR_PARTIAL", "title": "leather buckle bag",
+         "rating_number": 6614},
+        {"parent_asin": "EXACT", "title": "leather buckle", "description": "belt",
+         "rating_number": 10},
+    ]
+
+    def _rank(self, bonus: float) -> list[str]:
+        return rerank_candidates(
+            ["leather", "buckle", "belt"], self.CANDIDATES, 2,
+            popularity_weight=1.2,
+            required_terms=["leather", "buckle", "belt"],
+            completeness_bonus=bonus,
+        )
+
+    def test_a_popular_partial_match_wins_at_the_shipped_bonus(self) -> None:
+        # 15.88 against 18.56: the prior overturns completeness.
+        self.assertEqual(["POPULAR_PARTIAL", "EXACT"], self._rank(4.0))
+
+    def test_a_large_enough_bonus_makes_completeness_prior_proof(self) -> None:
+        # 27.88 against 18.56.
+        self.assertEqual(["EXACT", "POPULAR_PARTIAL"], self._rank(16.0))
