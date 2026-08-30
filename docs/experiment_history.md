@@ -53,48 +53,61 @@
   ## 1. Method comparison matrix
 
   All formal results use the full 200-session public set, the frozen 50,000-item
-  catalog, and the unmodified official evaluator. `Δ` is measured against the
-  previous retained method.
+  catalog, and the unmodified official evaluator.
 
-| ID | Method | Main change | Automated tests | HitRate@10 | Δ HitRate | MRR | MTTC ↓ | Efficiency | TechnicalScore | Δ Score | Decision | Commit |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| E0 | Weak BM25 baseline | Return BM25 Top-10 directly; no state or questions | 3 | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | Baseline | `3407835` |
-| E1 | Field reranker v1 | Rerank BM25 Top-100 by field coverage | 10 | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **Keep** | `db65ad2` |
-| E1-A | Reranker + BM25 rank prior | Add the original BM25 rank as a bonus to E1 | Targeted | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | Reject | Not committed |
-| E2 | Conversation State v1 | Accumulate constraints, handle overrides, ask profile-guided non-repeating questions | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | Keep | `d770b6f` |
-| E3-A | Fixed clarification | Use a fixed attribute question order | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | Reject | `fa84de2` |
-| E3-B | Profile clarification | Use the E2 profile-first policy as the ablation baseline | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | Previous baseline | `fa84de2` |
-| E3-C | Candidate-aware clarification | Ask first about a covered, varied attribute in the Top-100 candidates | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | Superseded by E9 | `fa84de2` |
-| E4-A | Balanced clarification | Prioritize the intersection of profile preferences and current product differences | 23 during experiment | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | Reject | Review branch only |
-| E4-B | Always-ask-other probe | Always ask `other`; diagnostic only | 35 | 0.840 | -0.030 | 0.522508 | 3.635 | 0.7365 | 0.724052 | -0.006019 | Reject (diagnostic) | Not separately committed |
-| E5 | Slot-aware override memory | Preserve category/department slots during override; clear the rest | 41 | **0.875** | +0.005 | 0.540300 | **4.290** | 0.6710 | **0.733790** | +0.003719 | Keep (weak evidence) | Included in remote series |
-| E6 | Turn-aware override memory | Also preserve constraints learned from turn 2 onward | 48 | 0.875 | +0.000 | 0.540300 | 4.290 | 0.6710 | 0.733790 | +0.000000 | Reject (no effect) | Included in remote series |
-| E7 | Candidate pool 100 -> 500 | Increase only the BM25 candidate pool | 51 | 0.875 | +0.000 | 0.528762 | 4.190 | 0.6810 | 0.732329 | -0.001461 | Reject | Included in remote series |
-| E8-A | Pool-frequency IDF (incorrect) | Treat candidate-pool term frequency as IDF | 53 | 0.790 | -0.085 | 0.459067 | 4.975 | 0.6025 | 0.653220 | -0.080570 | Reject (reasoning error) | Included in remote series |
-| E8-B | Catalog IDF + pool 500 | Weight with catalog-wide `fts5vocab` document frequency | 54 during experiment | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | Reject | Included in remote series |
-| E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
-| E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
-| E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
-| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
-| E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
-| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E18 | `92d4714` |
-| E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
-| E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
-| E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Review branch |
-| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Review branch |
-| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | `b3e88b8` |
-| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | Superseded by E21 | `e9dc276` |
-| E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
-| E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | **Current best** | `fe86b63` |
-| E22-A | Constraint ledger Stage 0 | Three override-state correctness fixes, measured separately | 103 | 0.965 | +0.000 | 0.662125 | 2.965 | 0.8035 | 0.841838 | +0.000000 | Reject 2 of 3; slot negation guard retained on correctness | Not committed |
-| E22-B | Constraint ledger Stage 1 | Append-only entries with status instead of deletion; query projected from active entries | 118 | **0.975** | +0.010 | **0.677881** | **2.810** | 0.8190 | **0.854664** | **+0.012826** | Keep | See branch |
-| E22-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
-| E22-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
-| E23-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
-| E23-B | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
-| E24 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | **Current best** | See branch |
-| E25 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
-| E26 | Merged line | E12-E21 rank quality merged with E22-E25 conversational coverage | 195 | **0.995** | +0.015 | **0.776613** | **2.400** | **0.8600** | **0.902484** | **+0.021814** | **Current best** | See T34 |
+  `Δ` is measured against whatever the `Baseline` column names, which is the
+  previous retained method for every row except E22-E25. Those were developed
+  in parallel on another branch and measured against E11, so their deltas do
+  **not** telescope with the rows above them and the column cannot be summed
+  down the table.
+
+  `Δ` is also a historical fact rather than a current one: it records what a
+  method bought on the system as it stood that day. For what each retained
+  mechanism is worth in the system as it stands **now**, see the
+  [merged-system ablation](../reports/experiments/merged-system-ablation.md),
+  whose marginal contributions are comparable across every row because all of
+  them are measured against the same system. Two mechanisms measure near zero
+  there.
+
+| ID | Method | Main change | Automated tests | Baseline | HitRate@10 | Δ HitRate | MRR | MTTC ↓ | Efficiency | TechnicalScore | Δ Score | Decision | Commit |
+| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| E0 | Weak BM25 baseline | Return BM25 Top-10 directly; no state or questions | 3 | — | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | Baseline | `3407835` |
+| E1 | Field reranker v1 | Rerank BM25 Top-100 by field coverage | 10 | prev. retained | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **Keep** | `db65ad2` |
+| E1-A | Reranker + BM25 rank prior | Add the original BM25 rank as a bonus to E1 | Targeted | prev. retained | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | Reject | Not committed |
+| E2 | Conversation State v1 | Accumulate constraints, handle overrides, ask profile-guided non-repeating questions | 14 | prev. retained | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | Keep | `d770b6f` |
+| E3-A | Fixed clarification | Use a fixed attribute question order | 21 | prev. retained | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | Reject | `fa84de2` |
+| E3-B | Profile clarification | Use the E2 profile-first policy as the ablation baseline | 21 | prev. retained | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | Previous baseline | `fa84de2` |
+| E3-C | Candidate-aware clarification | Ask first about a covered, varied attribute in the Top-100 candidates | 21 | prev. retained | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | Superseded by E9 | `fa84de2` |
+| E4-A | Balanced clarification | Prioritize the intersection of profile preferences and current product differences | 23 during experiment | prev. retained | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | Reject | Review branch only |
+| E4-B | Always-ask-other probe | Always ask `other`; diagnostic only | 35 | prev. retained | 0.840 | -0.030 | 0.522508 | 3.635 | 0.7365 | 0.724052 | -0.006019 | Reject (diagnostic) | Not separately committed |
+| E5 | Slot-aware override memory | Preserve category/department slots during override; clear the rest | 41 | prev. retained | **0.875** | +0.005 | 0.540300 | **4.290** | 0.6710 | **0.733790** | +0.003719 | Keep (weak evidence) | Included in remote series |
+| E6 | Turn-aware override memory | Also preserve constraints learned from turn 2 onward | 48 | prev. retained | 0.875 | +0.000 | 0.540300 | 4.290 | 0.6710 | 0.733790 | +0.000000 | Reject (no effect) | Included in remote series |
+| E7 | Candidate pool 100 -> 500 | Increase only the BM25 candidate pool | 51 | prev. retained | 0.875 | +0.000 | 0.528762 | 4.190 | 0.6810 | 0.732329 | -0.001461 | Reject | Included in remote series |
+| E8-A | Pool-frequency IDF (incorrect) | Treat candidate-pool term frequency as IDF | 53 | prev. retained | 0.790 | -0.085 | 0.459067 | 4.975 | 0.6025 | 0.653220 | -0.080570 | Reject (reasoning error) | Included in remote series |
+| E8-B | Catalog IDF + pool 500 | Weight with catalog-wide `fts5vocab` document frequency | 54 during experiment | prev. retained | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | Reject | Included in remote series |
+| E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | prev. retained | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
+| E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | prev. retained | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
+| E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | prev. retained | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
+| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | prev. retained | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
+| E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | prev. retained | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | prev. retained | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E18 | `92d4714` |
+| E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | prev. retained | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
+| E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | prev. retained | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
+| E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | prev. retained | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Review branch |
+| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | prev. retained | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Review branch |
+| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | prev. retained | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | `b3e88b8` |
+| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | prev. retained | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | Superseded by E21 | `e9dc276` |
+| E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | prev. retained | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
+| E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | prev. retained | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | **Current best** | `fe86b63` |
+| E22-A | Constraint ledger Stage 0 | Three override-state correctness fixes, measured separately | 103 | E11 (parallel) | 0.965 | +0.000 | 0.662125 | 2.965 | 0.8035 | 0.841838 | +0.000000 | Reject 2 of 3; slot negation guard retained on correctness | Not committed |
+| E22-B | Constraint ledger Stage 1 | Append-only entries with status instead of deletion; query projected from active entries | 118 | E11 (parallel) | **0.975** | +0.010 | **0.677881** | **2.810** | 0.8190 | **0.854664** | **+0.012826** | Keep | See branch |
+| E22-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | E11 (parallel) | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
+| E22-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | E11 (parallel) | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
+| E23-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | E11 (parallel) | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
+| E23-B | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | E11 (parallel) | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
+| E24 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | E11 (parallel) | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | **Current best** | See branch |
+| E25 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | E11 (parallel) | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
+| E26 | Merged line | E12-E21 rank quality merged with E22-E25 conversational coverage | 195 | E21 | **0.995** | +0.015 | **0.776613** | **2.400** | **0.8600** | **0.902484** | **+0.021814** | **Current best** | See T34 |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -1552,6 +1565,52 @@ sparser metadata. Evidence:
   values are stable across those versions and the reported score does not
   depend on the environment it was measured in.
 
+### T35: Merged-system ablation
+
+- Date: 2026-08-30
+- Purpose: the `Δ` column records what a method bought the day it was added.
+  After merging two parallel lines that is no longer a usable ranking of what
+  matters, both because E22-E25's deltas are measured against E11 and because
+  a mechanism can stop paying once later mechanisms rescue the same sessions.
+  Each retained mechanism was removed from the merged agent one at a time and
+  the official evaluator re-run.
+- Harness check: removing the whole constraint-ledger stack reproduces E21 at
+  `0.880670` to six decimals.
+- Marginal contribution, full system `0.902484`:
+
+  | Mechanism | Marginal |
+  | --- | ---: |
+  | Popularity prior (E11) | **-0.060171** |
+  | Constraint ledger (E22-B) | -0.012000 |
+  | Price presence prior (E21) | -0.012368 |
+  | Information-gain probe (E22-C) | -0.009731 |
+  | Phrase bigram bonus (E19) | -0.009239 |
+  | Buying/Browsing routing (E13) | -0.004612 |
+  | Semantic reranking (E18) | **-0.001723** |
+  | Implicit-rejection penalty (E24) | **-0.000083** |
+
+- **The popularity prior dwarfs everything built since.** Removing E11 costs
+  three times the next largest mechanism and roughly the sum of all the others.
+  Ten experiments across two parallel lines have collectively added less than
+  that one prior, and any description of this system that omits that is
+  misleading about where its performance comes from.
+- **E24 has stopped paying.** `0.000083`, with MRR fractionally higher without
+  it. It was worth `+0.014050` on its own line; the three Buying sessions it
+  rescued are now rescued earlier by the phrase bonus, the price prior and
+  semantic reranking, so it fires after the problem is already solved. Removing
+  it would also retire the only argument this system needs about the "ordered
+  best to worst" submission rule.
+- **E18 costs the project its entire dependency footprint for `0.001723`.**
+  `starter/agent.py` imports `starter/dense.py` unconditionally, so
+  scikit-learn and its transitive dependencies are required merely to import
+  the Agent. Whether that trade is worth making is a feasibility judgment for
+  whoever owns that experiment, not a score question.
+- Limitations: single removals only, so interactions are unmeasured and the
+  marginal contributions do not sum to the total -- they overlap wherever two
+  mechanisms rescue the same session. Near-zero here means redundant against
+  the mechanisms currently present, not useless on the private 800.
+- Evidence: [merged-system ablation](../reports/experiments/merged-system-ablation.md).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -1658,3 +1717,4 @@ tests` reports.
 - [Rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md)
 - [Exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md)
 - [Implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md)
+- [Merged-system ablation](../reports/experiments/merged-system-ablation.md)
