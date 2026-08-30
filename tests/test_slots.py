@@ -38,6 +38,24 @@ class ExtractSlotsTest(unittest.TestCase):
     def test_ignores_substring_collisions(self) -> None:
         self.assertEqual(extract_slots("blackberry preserves", GAZETTEER), {})
 
+    def test_recognizes_pu_as_the_faux_leather_material(self) -> None:
+        self.assertEqual(
+            extract_slots("looking for a PU bag", GAZETTEER),
+            {"material": ["faux leather"]},
+        )
+
+    def test_pu_leather_resolves_to_faux_leather_not_leather(self) -> None:
+        self.assertEqual(
+            extract_slots("PU leather wallet", GAZETTEER),
+            {"material": ["faux leather"]},
+        )
+
+    def test_pleather_resolves_to_faux_leather(self) -> None:
+        self.assertEqual(
+            extract_slots("a pleather jacket", GAZETTEER),
+            {"material": ["faux leather"]},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

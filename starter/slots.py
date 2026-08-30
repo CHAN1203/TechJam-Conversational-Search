@@ -5,6 +5,26 @@ from collections.abc import Mapping
 from analysis.gazetteer import normalize_term
 
 
+# Customer surface forms for the synthetic material, mined from `details.Material`
+# seed values only as "faux leather" or "polyurethane" -- "PU" and "pleather"
+# never appear there, so the mined vocabulary alone never learns them. "pu leather"
+# must resolve to the synthetic term before slot matching runs, or the "leather"
+# it contains would tag the constraint as genuine leather instead.
+_MATERIAL_ALIASES = {
+    "pu leather": "faux leather",
+    "pleather": "faux leather",
+    "pu": "faux leather",
+}
+
+
+def _apply_material_aliases(haystack: str, material_terms: Mapping[str, int]) -> str:
+    if "faux leather" not in material_terms:
+        return haystack
+    for alias in sorted(_MATERIAL_ALIASES, key=len, reverse=True):
+        haystack = haystack.replace(f" {alias} ", f" {_MATERIAL_ALIASES[alias]} ")
+    return haystack
+
+
 def extract_slots(
     text: str,
     gazetteer: Mapping[str, Mapping[str, int]],
@@ -17,6 +37,7 @@ def extract_slots(
     constraint the customer actually stated.
     """
     haystack = f" {normalize_term(text)} "
+    haystack = _apply_material_aliases(haystack, gazetteer.get("material", {}))
     matched: dict[str, list[str]] = {}
     for slot, terms in gazetteer.items():
         hits = [term for term in terms if f" {term} " in haystack]

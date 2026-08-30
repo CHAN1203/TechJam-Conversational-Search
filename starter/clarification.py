@@ -20,6 +20,7 @@ DEFAULT_ATTRIBUTE_ORDER = (
 CANDIDATE_PATTERNS = {
     "material": (
         "cotton", "polyester", "nylon", "leather", "wool", "spandex", "silk", "rayon", "fabric",
+        "pu",
     ),
     "color": (
         "black", "white", "blue", "red", "pink", "green", "brown", "gray", "grey", "purple",
