@@ -56,6 +56,7 @@ def rerank_candidates(
     idf: Mapping[str, float] | None = None,
     popularity_weight: float = 0.0,
     term_weights: Mapping[str, float] | None = None,
+    shown_penalty: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Order candidates by field-weighted term matches.
 
@@ -74,11 +75,19 @@ def rerank_candidates(
     `term_weights` scales each term independently of `idf`. The constraint
     ledger supplies it, so a constraint the customer gave in answer to a
     question can count differently from one they volunteered up front.
+
+    `shown_penalty` subtracts from a candidate that has already been put in
+    front of the customer. A shopper who saw ten products and kept talking has
+    implicitly declined them, and repeating the same ten is the one thing that
+    cannot succeed. This is negative evidence the conversation supplies for
+    free every turn.
     """
     scored = [
         (
             _match_score(query_terms, candidate, idf, term_weights)
-            + popularity_weight * _popularity(candidate),
+            + popularity_weight * _popularity(candidate)
+            - (0.0 if shown_penalty is None
+               else shown_penalty.get(str(candidate["parent_asin"]), 0.0)),
             rank,
             str(candidate["parent_asin"]),
         )

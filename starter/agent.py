@@ -4,9 +4,10 @@ import json
 import math
 import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
-from starter.clarification import select_attribute
+from starter.clarification import DEFAULT_ATTRIBUTE_ORDER, select_attribute
 from starter.ledger import ANSWERED, VOLUNTEERED, ConstraintLedger, assign_slots
 from starter.slots import extract_slots
 from starter.reranker import rerank_candidates
@@ -126,6 +127,7 @@ class Agent:
         answered_weight: float = 1.0,
         decay_lambda: float = 0.0,
         no_gain_probe: int | None = None,
+        rejection_weight: float = 0.0,
     ) -> None:
         if state_model not in STATE_MODELS:
             raise ValueError(f"unsupported state model: {state_model}")
@@ -137,6 +139,7 @@ class Agent:
         self.answered_weight = answered_weight
         self.decay_lambda = decay_lambda
         self.no_gain_probe = no_gain_probe
+        self.rejection_weight = rejection_weight
         self.popularity_weight = popularity_weight
         self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
@@ -147,6 +150,7 @@ class Agent:
         self._session_ledgers: dict[str, ConstraintLedger] = {}
         self._session_term_weights: dict[str, dict[str, float] | None] = {}
         self._session_no_gain: dict[str, int] = {}
+        self._session_shown: dict[str, Counter] = {}
         self._build_index()
 
     def _build_index(self) -> None:
@@ -223,6 +227,7 @@ class Agent:
         self._session_ledgers[session_id] = ConstraintLedger()
         self._session_term_weights[session_id] = None
         self._session_no_gain[session_id] = 0
+        self._session_shown[session_id] = Counter()
 
     def _advance_slots(
         self,
@@ -303,6 +308,36 @@ class Agent:
         )
         return ledger.project(TERM_LIMIT)
 
+    def _is_stuck(self, session_id: str) -> bool:
+        """The conversation has stopped yielding information."""
+        return (
+            self.no_gain_probe is not None
+            and self._session_no_gain.get(session_id, 0) >= self.no_gain_probe
+        )
+
+    def _shown_penalty(self, session_id: str) -> dict[str, float] | None:
+        """Down-weight what the customer has already seen and not taken.
+
+        Applied only once the conversation is stuck. While new constraints are
+        still arriving the ranking is improving for legitimate reasons and the
+        top of the list deserves to be stable; once nothing new is arriving,
+        showing the same ten products again is the one outcome that cannot
+        succeed.
+
+        This is genuine re-scoring, not paging. The agent reports the order it
+        actually believes given that these items were declined, rather than
+        handing back a slice of a list it still ranks the same way.
+        """
+        if not self.rejection_weight or not self._is_stuck(session_id):
+            return None
+        shown = self._session_shown.get(session_id)
+        if not shown:
+            return None
+        return {
+            parent_asin: self.rejection_weight * count
+            for parent_asin, count in shown.items()
+        }
+
     def respond(
         self,
         session_id: str,
@@ -357,17 +392,26 @@ class Agent:
                     top_k,
                     popularity_weight=self.popularity_weight,
                     term_weights=self._session_term_weights.get(session_id),
+                    shown_penalty=self._shown_penalty(session_id),
                 )
             ]
+        self._session_shown[session_id].update(
+            item["parent_asin"] for item in recommendations
+        )
         asked = self._session_asked_attributes[session_id]
-        if (
-            self.no_gain_probe is not None
-            and self._session_no_gain.get(session_id, 0) >= self.no_gain_probe
-        ):
-            # Named attributes have stopped yielding, so ask an open question
-            # instead of continuing down the policy order. Repeating it is
-            # deliberate: the point is to keep asking for anything undisclosed.
-            ask_attribute = "other"
+        if self._is_stuck(session_id):
+            # Named attributes have stopped yielding, so ask an open question.
+            # If that yields nothing either, keep cycling rather than concluding
+            # the customer has nothing left to say. A real shopper reminded of a
+            # different attribute may remember something; only this simulator
+            # answers "other" as a strict superset of every named attribute.
+            stuck_for = self._session_no_gain[session_id] - self.no_gain_probe
+            ask_attribute = (
+                "other" if stuck_for == 0
+                else DEFAULT_ATTRIBUTE_ORDER[
+                    (stuck_for - 1) % len(DEFAULT_ATTRIBUTE_ORDER)
+                ]
+            )
         else:
             ask_attribute = select_attribute(
                 self.clarification_policy,

@@ -8,10 +8,11 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: E13-C Constraint Ledger with the information-gain probe, with
-> public HitRate@10 `0.980`, MRR `0.698381`, MTTC `2.540`, and TechnicalScore
-> `0.868714`. Recommended configuration:
-> `Agent(state_model="ledger", no_gain_probe=1)`. Constructor defaults remain
+> Current best: E16 Implicit-Rejection Reranking, with public HitRate@10
+> `0.995`, MRR `0.694964`, MTTC `2.465`, and TechnicalScore `0.876689`.
+> Recommended configuration:
+> `Agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)`.
+> The weight is deliberately not the highest-scoring one; see T22. Constructor defaults remain
 > `state_model="slots"` and `no_gain_probe=None`, so an unflagged `Agent()`
 > still reproduces E11 at `0.841838`.
 
@@ -50,6 +51,7 @@
 | E13-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
 | E14-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
 | E15 | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
+| E16 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | **Current best** | See branch |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -80,6 +82,7 @@
 | E13-A Stage 0 retained | 0.9500 | **1.0000** | 0.933333 | 0.9000 |
 | E13-B Constraint ledger | 0.9500 | **1.0000** | **1.000000** | 0.9000 |
 | E13-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
+| E16 Implicit-rejection reranking | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -719,6 +722,58 @@
   deleting the conversational vocabulary costs sessions.
 - Evidence: [exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md).
 
+### T22: Implicit-rejection reranking (current best)
+
+- Date: 2026-08-30
+- Hypothesis: T20 and T21 both failed to move the four stuck sessions, and
+  widening the pool was ruled out by pool-position data. What remained unused
+  was negative evidence the conversation supplies for free: a shopper who saw
+  ten products and kept talking has implicitly declined them, and returning the
+  same ten is the one outcome that cannot succeed. The ledger recorded what the
+  customer said but not what the agent showed.
+- Change: count what has been shown per session and, only once the
+  information-gain counter says the conversation is stuck, subtract
+  `rejection_weight * times_shown` from the rerank score. While new constraints
+  are arriving the ranking improves for legitimate reasons and is left alone.
+- Second change: a stuck agent previously asked `other` every remaining turn.
+  In this evaluator `other` is a strict superset of every named attribute --
+  `customer_reply` short-circuits on `attribute == "other"` -- so one empty
+  answer proves nothing is left. That is a property of the simulator, not of
+  shoppers, and hard-coding it would not transfer. The stuck agent now asks
+  `other` once and then cycles named attributes.
+- Sweep validation: `0.0` `0.867378`, `0.5` `0.875253`, **`1.0` `0.884128`**,
+  `2.0` `0.884878`, `4.0` `0.885128`, `8.0` `0.885753`, `16.0` and `64.0`
+  identical to `8.0`.
+- Result at the retained weight `1.0`: HitRate@10 `0.995`, MRR `0.694964`,
+  MTTC `2.465`, Efficiency `0.8535`, TechnicalScore `0.876689`. Buying
+  `0.950000 -> 0.987500`; Browsing, Boundary and Intent Override all
+  `1.000000`. Three of the four misses recovered.
+- **The retained weight is not the highest-scoring one.** The curve is monotone
+  and saturates at `8`, where the penalty exceeds any plausible difference in
+  match quality and every unshown candidate outranks every shown one regardless
+  of how well it matches. `docs/submission_rules.md` requires recommendations
+  "ordered best to worst"; that is a mechanical exclusion, not an ordering. At
+  saturation the recovered sessions report ranks `1`, `2`, `3` for items the
+  agent ranks 11th, 17th and 28th. At `1.0` the penalty is about one
+  field-weight unit against match scores of 7 to 30, so it breaks near-ties
+  only, and a strongly matching shown item still outranks a weakly matching new
+  one. The invariant is locked by `test_relevance_still_outranks_novelty`. The
+  cost of declining the saturated region is `0.001625`.
+- Honest accounting: part of the gain is still earned by removing competitors
+  rather than by ranking better. MRR in fact falls slightly
+  (`0.698381 -> 0.694964`) while HitRate carries the improvement, which is the
+  opposite of what rank inflation would produce. The sweep lacks T15's shape --
+  development and validation do not peak independently and there is no plateau
+  -- so the evidence is weaker than the popularity prior's.
+- Decision: keep at `rejection_weight = 1.0`. Constructor defaults unchanged;
+  an unflagged `Agent()` still reproduces E11 at `0.841838`.
+- Limitations: three recovered sessions out of 80 Buying. In Intent Override a
+  pre-override hit does not end the session, so a target shown early could in
+  principle be penalised later; it did not happen at this weight on the public
+  set, which is a measurement and not a guarantee. `public_0020` remains
+  unreachable at pool position 187.
+- Evidence: [implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -737,7 +792,7 @@
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
   | `test_ledger.py` | 27 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, weights, probe thresholds, slot/ledger equivalence |
 | `test_session_trace.py` | 13 | Override keep/drop classification, normalization loss, dead-turn detection, trace/evaluator agreement |
-| **Total** | **127** | Current full regression suite |
+| **Total** | **133** | Current full regression suite |
 
 The per-module counts for the older modules have drifted as experiments were
 added. The authoritative number is whatever `python -m unittest discover -s
@@ -817,3 +872,4 @@ tests` reports.
 - [Constraint ledger Stage 2](../reports/experiments/constraint-ledger-stage2.md)
 - [Rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md)
 - [Exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md)
+- [Implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md)

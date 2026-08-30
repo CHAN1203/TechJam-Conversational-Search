@@ -302,5 +302,99 @@ class LedgerWeightTest(unittest.TestCase):
         self.assertLess(ledger.projection_weights(9, decay_lambda=0.5)["belt"], 1.0)
 
 
+class ImplicitRejectionTest(AgentFixture, unittest.TestCase):
+    """E16: what the customer was shown and did not take is negative evidence."""
+
+    CATALOG = [
+        {
+            "parent_asin": "STRONG-SHOWN",
+            "title": "Leather Belt Buckle",
+            "categories": ["Accessories", "Belts"],
+            "features": ["Buckle closure"], "details": {"material": "leather"},
+            "store": "Example", "description": [],
+        },
+        {
+            "parent_asin": "WEAK-UNSHOWN",
+            "title": "Leather",
+            "categories": ["Accessories"],
+            "features": [], "details": {}, "store": "Example", "description": [],
+        },
+    ]
+    GAZETTEER = {"category": {"belt": 2}, "material": {"leather": 1}}
+
+    def _agent(self, **kwargs) -> Agent:
+        agent = self.build_agent(self.CATALOG, gazetteer=self.GAZETTEER)
+        for name, value in kwargs.items():
+            setattr(agent, name, value)
+        agent.reset("session", {})
+        return agent
+
+    def test_the_penalty_is_off_by_default(self) -> None:
+        self.assertEqual(0.0, self.build_agent(self.CATALOG).rejection_weight)
+
+    def test_shown_products_are_recorded(self) -> None:
+        agent = self._agent(state_model="ledger")
+
+        agent.respond("session", "I want a leather belt buckle", 1, 2)
+
+        self.assertEqual(
+            {"STRONG-SHOWN": 1, "WEAK-UNSHOWN": 1},
+            dict(agent._session_shown["session"]),
+        )
+
+    def test_nothing_is_penalised_while_the_conversation_still_yields(self) -> None:
+        # The ranking is improving for legitimate reasons; the top of the list
+        # deserves to be stable.
+        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent.respond("session", "I want a leather belt buckle", 1, 2)
+
+        self.assertIsNone(agent._shown_penalty("session"))
+
+    def test_a_stuck_turn_penalises_what_was_already_shown(self) -> None:
+        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent.respond("session", "I want a leather belt buckle", 1, 2)
+        agent.respond("session", "I don't have an additional preference for color.", 2, 2)
+
+        penalty = agent._shown_penalty("session")
+
+        self.assertIsNotNone(penalty)
+        self.assertGreater(penalty["STRONG-SHOWN"], 0.0)
+
+    def test_relevance_still_outranks_novelty(self) -> None:
+        """The submission rules require recommendations ordered best to worst.
+
+        A novelty preference the agent can justify is one that a better match
+        can overrule. A weight large enough to rank any unshown item above any
+        shown item regardless of match quality is mechanical exclusion, not an
+        ordering, so the retained weight must stay small enough that this test
+        holds.
+        """
+        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent.respond("session", "I want a leather belt buckle", 1, 2)
+        response = agent.respond(
+            "session", "I don't have an additional preference for color.", 2, 2
+        )
+
+        ranked = [item["parent_asin"] for item in response["recommendations"]]
+        self.assertEqual("STRONG-SHOWN", ranked[0])
+
+    def test_a_stuck_agent_keeps_asking_instead_of_repeating_other(self) -> None:
+        # "other" being a strict superset of every named attribute is a property
+        # of this simulator, not of shoppers. The agent must not conclude from
+        # one empty answer that nothing is left.
+        agent = self._agent(state_model="ledger", no_gain_probe=1, rejection_weight=1.0)
+        agent.respond("session", "I want a leather belt", 1, 2)
+        asked = [
+            agent.respond("session", f"I don't have an additional preference for x{i}.", i + 2, 2)[
+                "ask_attribute"
+            ]
+            for i in range(4)
+        ]
+
+        self.assertEqual("other", asked[0])
+        self.assertNotIn("other", asked[1:])
+        self.assertEqual(len(asked[1:]), len(set(asked[1:])))
+
+
 if __name__ == "__main__":
     unittest.main()
