@@ -1088,6 +1088,16 @@
   [design](designs/2026-08-29-coverage-stress-dual-evaluation-design.md), and
   [plan](plans/2026-08-29-coverage-stress-dual-evaluation.md).
 
+**Re-run against E19 (the current best as of this merge)**, using this same
+tool unmodified (`python -m scripts.run_dual_catalog_evaluation`): official
+HitRate@10 `0.980`, MRR `0.715919`, TechnicalScore `0.868476`; coverage-stress
+HitRate@10 `0.980` (**0/200 sessions change hit/miss status, in any
+scenario**), MRR `0.730494`, TechnicalScore `0.873848` (`+0.005372`). Same
+pattern as the original E11 run: a small positive delta, no scenario
+regresses. E13/E18/E19's added layers do not introduce new sensitivity to
+sparser metadata. Evidence:
+[E19 validation result](../reports/experiments/coverage-stress-post-e19-validation.json).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
