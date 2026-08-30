@@ -49,6 +49,7 @@
 | E13-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
 | E13-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
 | E14-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
+| E15 | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -672,6 +673,52 @@
   the clean gazetteer and ledger is a hypothesis worth testing, not a prediction.
 - Evidence: [rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md).
 
+### T21: Exhaustion-triggered catalog IDF (rejected, with a mechanism)
+
+- Date: 2026-08-30
+- Hypothesis: the three in-pool Buying misses all carry hard constraints made
+  of generic material words, and the reranker weights every term identically.
+  E8 rejected catalog IDF applied unconditionally and E10 rejected it routed on
+  an override signal; this applies it on a third signal, the E13-C
+  information-gain counter, which is a perfect predictor of failure on the
+  public set. The reasoning was that discounting a term while information is
+  still arriving risks discarding a constraint the customer has not finished
+  expressing, whereas once the counter fires the term list is final.
+- Result: HitRate@10 `0.980`, MRR `0.698381`, MTTC `2.540`, TechnicalScore
+  `0.868714` at thresholds 1 and 2 alike, identical in every digit to E13-C.
+  **Zero of 200 sessions changed hit, hit turn, or rank.** The mechanism was
+  verified to fire: per-term multipliers move from a flat `1.0` to a `0.93` to
+  `7.42` spread on triggering turns.
+- Why: IDF moves the target *away* from the Top-10. Pool position on the stuck
+  turn, without IDF then with it: `public_0054` `11 -> 27`, `public_0161`
+  `17 -> 30`, `public_0179` `28 -> 27`, `public_0020` outside the pool either
+  way. The direction of the hypothesis was wrong, not just its size.
+- Mechanism, and the reason E8 and E10 also failed: the rarest words in the
+  query are the evaluator's own phrasing, not the customer's constraints. For
+  `public_0054` the three highest IDF weights go to `matters` (29 products,
+  `7.42`), `requirement` (36, `7.21`) and `key` (612, `4.41`), all from "A key
+  requirement is:" and "For that, what matters is:". `women`, the customer's
+  actual stated attribute, receives the lowest weight in the query, `0.93` --
+  eight times less than `matters`. Rarity and informativeness are different
+  quantities here, so any rarity-based weighting promotes conversational
+  scaffolding over stated constraints. E8 and E10 recorded the outcome; none of
+  the reports recorded this cause.
+- Interaction with T17: Stage 0 measured that *removing* those same template
+  words costs two intent_override sessions, because they widen the FTS5 `MATCH`
+  expression and change pool composition. T21 measures that *weighting* them is
+  worse than weighting nothing. The template words must therefore be present
+  and unweighted, which is what the retained agent already does. Neither half
+  is obvious alone, and a query-cleaning step cannot be evaluated independently
+  of a weighting step.
+- Decision: reject. `exhaustion_idf` and `_effective_term_weights` removed;
+  `starter/agent.py` is byte-identical to E13-C. The optional `idf` argument on
+  `rerank_candidates` stays, per T13.
+- Next step: no term-weighting scheme derived from catalog statistics is likely
+  to work while the query contains evaluator phrasing. A measure computed over
+  product vocabulary alone would have to come first, and T17 shows that simply
+  deleting the conversational vocabulary costs sessions.
+- Evidence: [exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md).
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |
@@ -769,3 +816,4 @@ tests` reports.
 - [Constraint ledger Stage 1](../reports/experiments/constraint-ledger-stage1.md)
 - [Constraint ledger Stage 2](../reports/experiments/constraint-ledger-stage2.md)
 - [Rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md)
+- [Exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md)
