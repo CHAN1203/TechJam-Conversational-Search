@@ -93,6 +93,12 @@ truth. Optional Chinese translations live only on the local machine under
 `docs/zh-CN/` and `reports/zh-CN/`; Git ignores those folders, so they are not
 included in commits or pushed to GitHub.
 
+## Architecture
+
+A per-turn walkthrough of the current system, with diagrams for slot
+extraction, intent-override memory, retrieval and ranking:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Agent Interface
 
 ```python
