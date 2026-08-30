@@ -68,13 +68,18 @@ def _best_weight_by_term(query_terms: Sequence[str], candidate: Mapping[str, obj
 def _match_score(
     best_weight_by_term: Mapping[str, float],
     idf: Mapping[str, float] | None = None,
+    term_weights: Mapping[str, float] | None = None,
 ) -> float:
-    if idf is None:
+    if idf is None and term_weights is None:
         return sum(best_weight_by_term.values())
-    return sum(
-        weight * idf.get(term, 1.0)
-        for term, weight in best_weight_by_term.items()
-    )
+    total = 0.0
+    for term, weight in best_weight_by_term.items():
+        if idf is not None:
+            weight *= idf.get(term, 1.0)
+        if term_weights is not None:
+            weight *= term_weights.get(term, 1.0)
+        total += weight
+    return total
 
 
 def rerank_candidates(
@@ -91,6 +96,7 @@ def rerank_candidates(
     semantic_weight: float = 0.0,
     phrase_terms: Sequence[str] | None = None,
     phrase_weight: float = 0.0,
+    term_weights: Mapping[str, float] | None = None,
 ) -> list[str]:
     """Order candidates by field-weighted term matches.
 
@@ -136,6 +142,13 @@ def rerank_candidates(
     absent from the mapping contributes zero, not an error -- the semantic
     signal is a bonus on top of lexical scoring, never a requirement.
 
+    `term_weights` optionally scales each query term's contribution by a
+    per-term multiplier, applied on top of any `idf`. Used for turn-recency
+    weighting: a constraint the customer volunteered on turn 4 in answer to a
+    specific question is more discriminating than the category they opened
+    with, so later-arriving terms can be made to count for more. A term absent
+    from the mapping is scaled by 1.0, so an empty or partial mapping is safe.
+
     `phrase_terms` (with `phrase_weight`) rewards a candidate whose text
     contains the customer's adjacent word-pairs as a literal substring, not
     just the same words scattered independently -- "running shoe" as a
@@ -149,7 +162,10 @@ def rerank_candidates(
     for rank, candidate in enumerate(candidates):
         parent_asin = str(candidate["parent_asin"])
         best_weight_by_term = _best_weight_by_term(query_terms, candidate)
-        score = _match_score(best_weight_by_term, idf) + popularity_weight * _popularity(candidate)
+        score = (
+            _match_score(best_weight_by_term, idf, term_weights)
+            + popularity_weight * _popularity(candidate)
+        )
         score += price_weight * _has_price(candidate)
         score += rating_weight * _average_rating(candidate)
         score += semantic_weight * semantic_scores.get(parent_asin, 0.0)
