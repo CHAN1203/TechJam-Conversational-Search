@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+import sys
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from starter.dense import DenseIndex
 
@@ -72,6 +77,42 @@ class DenseIndexSimilarityTest(unittest.TestCase):
 
     def test_project_of_a_zero_overlap_query_returns_none(self) -> None:
         self.assertIsNone(self.index.project("zzz qqq xyzzy"))
+
+
+class LazyDenseImportTest(unittest.TestCase):
+    """scikit-learn is required to build the dense index, not to import the Agent.
+
+    E18 measured at a marginal 0.001723 in the merged system (T37) while being
+    the project's entire third-party dependency. Deferring the import keeps the
+    gain and makes every non-semantic configuration runnable on the standard
+    library alone.
+    """
+
+    def _catalog(self, directory: str) -> Path:
+        path = Path(directory) / "catalog.jsonl"
+        path.write_text(json.dumps({
+            "parent_asin": "A", "title": "leather belt", "categories": ["Belts"],
+            "features": [], "details": {}, "store": "x", "description": "",
+            "rating_number": 10, "average_rating": 4.5,
+        }) + "\n", encoding="utf-8")
+        return path
+
+    def test_a_non_semantic_agent_builds_without_scikit_learn(self) -> None:
+        from starter.agent import Agent
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = self._catalog(directory)
+            with patch.dict(sys.modules, {"starter.dense": None}):
+                agent = Agent(catalog, semantic_weight=0.0, retrieval_mode="bm25")
+            self.assertIsNone(agent.dense_index)
+
+    def test_the_default_agent_does_need_it(self) -> None:
+        # Guards against the deferral quietly turning E18 off.
+        from starter.agent import Agent
+        with tempfile.TemporaryDirectory() as directory:
+            catalog = self._catalog(directory)
+            with patch.dict(sys.modules, {"starter.dense": None}):
+                with self.assertRaises(ImportError):
+                    Agent(catalog)
 
 
 if __name__ == "__main__":

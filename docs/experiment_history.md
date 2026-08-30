@@ -1801,6 +1801,33 @@ sparser metadata. Evidence:
   stronger evidence than either result alone.
 - Automated tests: 195, all passing.
 
+### T40: Deferring the scikit-learn import
+
+- Date: 2026-08-30
+- Motivation: T37 measured E18 semantic reranking at a marginal `0.001723`
+  while it was the reason for the project's entire third-party dependency.
+  `starter/agent.py` imported `starter/dense.py` at module scope, so
+  scikit-learn, scipy, joblib and threadpoolctl were required merely to
+  *import* the Agent -- including for configurations that never build a dense
+  index.
+- Change: the import moved inside `_build_index`, behind the
+  `_needs_dense_index` guard that already existed. One line, no behavioural
+  change to any scored path.
+- Result: `0.906943` unchanged, all scenarios unchanged, 197 tests passing.
+  The default configuration still requires scikit-learn, because E18 is on by
+  default. What changed is that `Agent(semantic_weight=0.0,
+  retrieval_mode="bm25")` -- which includes the E11 reproduction and every
+  ablation arm that turns semantics off -- now imports and runs on the standard
+  library alone.
+- Two tests pin both directions: a non-semantic Agent builds with
+  `starter.dense` blocked, and the default Agent still raises `ImportError`
+  with it blocked. The second matters more than the first: it is what stops the
+  deferral from quietly turning E18 off.
+- This is a Feasibility and Practicality change rather than a score change. It
+  does not remove the dependency; it makes it proportionate to what actually
+  uses it, so the claim "this agent runs on the standard library" stays true
+  for every configuration that does not opt into semantics.
+
   ## 5. Current automated test coverage
 
   | Test module | Tests | Behavior protected |

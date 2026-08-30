@@ -7,7 +7,6 @@ import sqlite3
 from pathlib import Path
 
 from starter.clarification import DEFAULT_ATTRIBUTE_ORDER, select_attribute
-from starter.dense import DenseIndex
 from starter.ledger import ANSWERED, VOLUNTEERED, ConstraintLedger, assign_slots
 from starter.slots import extract_slots
 from starter.reranker import extract_bigrams, rerank_candidates
@@ -273,7 +272,19 @@ class Agent:
         self.document_count = self.connection.execute(
             "SELECT count(*) FROM products"
         ).fetchone()[0]
-        self.dense_index = DenseIndex(dense_asins, dense_texts) if self._needs_dense_index else None
+        if self._needs_dense_index:
+            # Imported here rather than at module scope so scikit-learn is a
+            # requirement of *building the dense index*, not of importing the
+            # Agent. E18 is on by default, so the default path still needs it;
+            # but `Agent(semantic_weight=0.0)` now runs on the standard library
+            # alone, which keeps every non-semantic configuration -- including
+            # the E11 reproduction -- installable and runnable with no
+            # third-party dependency at all.
+            from starter.dense import DenseIndex
+
+            self.dense_index = DenseIndex(dense_asins, dense_texts)
+        else:
+            self.dense_index = None
 
     def _catalog_idf(self, terms: list[str]) -> dict[str, float]:
         """Weight each query term by how rare it is across the whole catalog.

@@ -1,7 +1,9 @@
-# starter/agent.py imports starter/dense.py unconditionally (semantic
-# reranking, E18, is on by default), so this is required just to import
-# the Agent, not only for the optional retrieval_mode="dense"/"rrf" paths
-# (E16/E17). scikit-learn pulls in scipy, joblib, and threadpoolctl
-# automatically -- no other dependency in this project needs pinning.
+# Needed to BUILD the dense index, not to import the Agent. Semantic
+# reranking (E18) is on by default, so the default configuration does require
+# this; but starter/agent.py imports starter/dense.py lazily, so
+# Agent(semantic_weight=0.0, retrieval_mode="bm25") -- including the E11
+# reproduction -- imports and runs on the standard library alone. See T40.
+# scikit-learn pulls in scipy, joblib and threadpoolctl automatically; no
+# other dependency in this project needs pinning.
 scikit-learn==1.9.0
 numpy==2.2.6
