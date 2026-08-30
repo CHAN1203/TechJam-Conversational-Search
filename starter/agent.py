@@ -4,6 +4,7 @@ import json
 import math
 import re
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 
 from starter.clarification import DEFAULT_ATTRIBUTE_ORDER, select_attribute
@@ -121,6 +122,14 @@ COMPLETENESS_BONUS = 4.0
 # does nothing on its own (+0.000000 at both 8.0 and 16.0 buying-only), so it
 # stays at one title-weight unit -- see reports/experiments/constraint-satisfaction-routing.md.
 COMPLETENESS_ALL_ROUTES = True
+# E31: per-route reranking weights, keyed by the route `_classify_route`
+# assigns at turn 1. `None` means every route uses the single global weight,
+# which is the behaviour through E28. The problem statement asks for
+# "heterogeneous retrieval routing (weights, ...)"; E22 made the completeness
+# bonus route-independent, which left `_classify_route` computed but unused,
+# so this is the only live consumer of the route.
+ROUTE_SEMANTIC_WEIGHTS: dict[str, float] | None = None
+ROUTE_POPULARITY_WEIGHTS: dict[str, float] | None = None
 # Scales each query term by 1 + RECENCY_WEIGHT * (arrival_turn - 1), so a
 # constraint answered on a later turn outweighs the opening category. 0.0
 # leaves every term equal, which is the behaviour through E21.
@@ -176,9 +185,13 @@ class Agent:
         completeness_bonus: float = COMPLETENESS_BONUS,
         completeness_all_routes: bool = COMPLETENESS_ALL_ROUTES,
         recency_weight: float = RECENCY_WEIGHT,
+        route_semantic_weights: Mapping[str, float] | None = ROUTE_SEMANTIC_WEIGHTS,
+        route_popularity_weights: Mapping[str, float] | None = ROUTE_POPULARITY_WEIGHTS,
     ) -> None:
         if state_model not in STATE_MODELS:
             raise ValueError(f"unsupported state model: {state_model}")
+        self.route_semantic_weights = dict(route_semantic_weights or {})
+        self.route_popularity_weights = dict(route_popularity_weights or {})
         self.completeness_bonus = completeness_bonus
         self.completeness_all_routes = completeness_all_routes
         self.recency_weight = recency_weight
@@ -207,7 +220,13 @@ class Agent:
     def _build_index(self) -> None:
         # Needed either as a retrieval route (E16/E17) or purely to score
         # candidates that BM25 already retrieved (semantic reranking).
-        self._needs_dense_index = self.retrieval_mode in ("dense", "rrf") or self.semantic_weight != 0.0
+        # A per-route weight can turn semantic scoring on for one route while
+        # the global weight is 0.0, so the index must be built for that case too.
+        self._needs_dense_index = (
+            self.retrieval_mode in ("dense", "rrf")
+            or self.semantic_weight != 0.0
+            or any(weight != 0.0 for weight in self.route_semantic_weights.values())
+        )
         cursor = self.connection.cursor()
         cursor.execute(
             "CREATE VIRTUAL TABLE products USING fts5("
@@ -498,8 +517,16 @@ class Agent:
         if not candidates:
             recommendations: list[dict] = []
         else:
+            # E31: the route decides the weights. Falls back to the global
+            # weight whenever no per-route value is configured, so the default
+            # configuration is byte-for-byte E28 by construction.
+            route = self._session_route[session_id]
+            semantic_weight = self.route_semantic_weights.get(route, self.semantic_weight)
+            popularity_weight = self.route_popularity_weights.get(
+                route, self.popularity_weight
+            )
             semantic_scores: dict[str, float] = {}
-            if self.semantic_weight != 0.0 and self.dense_index is not None:
+            if semantic_weight != 0.0 and self.dense_index is not None:
                 query_vector = self.dense_index.project(query_text)
                 if query_vector is not None:
                     for candidate in candidates:
@@ -513,13 +540,13 @@ class Agent:
                     unique_terms,
                     candidates,
                     top_k,
-                    popularity_weight=self.popularity_weight,
+                    popularity_weight=popularity_weight,
                     price_weight=self.price_weight,
                     rating_weight=self.rating_weight,
                     required_terms=required_terms,
                     completeness_bonus=self.completeness_bonus,
                     semantic_scores=semantic_scores,
-                    semantic_weight=self.semantic_weight,
+                    semantic_weight=semantic_weight,
                     phrase_terms=extract_bigrams(user_message),
                     phrase_weight=self.phrase_weight,
                     term_weights=term_weights,
