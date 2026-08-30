@@ -1,6 +1,6 @@
 # Architecture: what happens on one turn
 
-Current best is **E21**, public TechnicalScore `0.880670`. This describes the
+Current best is **E22**, public TechnicalScore `0.884741`. This describes the
 code as it runs today, not the design plan.
 
 Everything here is stdlib plus scikit-learn and numpy
@@ -48,7 +48,7 @@ flowchart TD
 
     CAP --> BM25["SQLite FTS5<br/>OR query over all terms<br/>field-weighted BM25"]
     BM25 --> POOL["Top 100 candidates"]
-    POOL --> RANK["Rerank: field coverage<br/>+ popularity + price<br/>+ semantic + phrase<br/>+ completeness (buying only)"]
+    POOL --> RANK["Rerank: field coverage<br/>+ popularity + price<br/>+ semantic + phrase<br/>+ completeness (all routes)"]
     RANK --> TOP10["Top 10 parent_asin"]
 
     POOL --> CLAR["select_attribute, candidate policy:<br/>score coverage x diversity of each<br/>attribute across the 100 candidates,<br/>never repeat an attribute"]
@@ -137,7 +137,7 @@ flowchart TD
         PR["+ 2.0 if the listing carries a price"]
         SEM["+ 1.0 x dense cosine similarity<br/>(TF-IDF + SVD, E18)"]
         PH["+ 1.0 per adjacent word-pair from<br/>this turn's message found as a<br/>literal substring (E19)"]
-        CB["+ 4.0 if every currently-known<br/>constraint matches<br/>(buying route only, E13)"]
+        CB["+ 4.0 if every currently-known<br/>constraint matches<br/>(every route since E22)"]
     end
 
     SCORE --> SORT["Sort by score descending;<br/>ties keep original BM25 order"]
@@ -216,6 +216,8 @@ is off. See
 | `SEMANTIC_WEIGHT` | 1.0 | `starter/agent.py` |
 | `PHRASE_WEIGHT` | 1.0 | `starter/agent.py` |
 | `COMPLETENESS_BONUS` | 4.0 | `starter/agent.py` |
+| `COMPLETENESS_ALL_ROUTES` | True | `starter/agent.py` |
+| `RECENCY_WEIGHT` | 0.0 (disabled) | `starter/agent.py` |
 | `PRICE_WEIGHT` | 2.0 | `starter/agent.py` |
 | `RATING_WEIGHT` | 0.0 (disabled) | `starter/agent.py` |
 | `DURABLE_SLOTS` | category, department | `starter/agent.py` |
@@ -239,6 +241,14 @@ is off. See
   survives only as a reranking signal (E18).
 - Query-side stemming was tested and rejected: `-0.047052`, traced to a
   broader query overflowing the fixed 100-candidate cutoff (E20).
+- Making the completeness bonus prior-proof by raising it was tested and
+  rejected: `+0.000000` at both 8.0 and 16.0 on the Buying route, byte-for-byte
+  identical output. The gain attributed to that idea came entirely from
+  applying the bonus to Browsing sessions instead (E22).
+- Turn-recency term weighting was tested and rejected: a clean monotonic
+  decline with no peak, `-0.000762` at weight 0.1 falling to `-0.031340` at
+  1.0 (E23). The opening category term is what holds the candidate pool
+  on-topic; down-weighting it widens the pool rather than sharpening it.
 - Choosing the clarification attribute by Shannon entropy of its value split
   instead of `coverage x diversity` was tested and rejected twice
   independently: `-0.000437` full (E14) and `-0.001812` validation on a

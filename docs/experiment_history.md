@@ -8,20 +8,21 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: the merged line with E24 retired, at public HitRate@10 `0.995`,
-> MRR `0.776669`, MTTC `2.405`, and TechnicalScore `0.902401`. See E26, T34,
-> T35 and T36.
+> Current best: the merged line, at public HitRate@10 `0.995`, MRR `0.791810`,
+> MTTC `2.405`, and TechnicalScore `0.906943`. See E28, T36, T37, T38 and T39.
 >
-> Two lines were developed in parallel and merged on 2026-08-30. E12-E21 came
-> from `feat/hs` and improved rank quality; E22-E25 came from
+> Two lines were developed in parallel and merged twice, on 2026-08-30.
+> E12-E23 came from `feat/hs` and improved rank quality; E24-E27 came from
 > `experiment/constraint-ledger` and improved conversational coverage. Neither
-> knew about the other, so E22-E25 are numbered by merge order rather than by
+> knew about the other, so E24-E27 are numbered by merge order rather than by
 > date, and their `Delta` values are within-line against E11 rather than
-> against E21. The two turned out to be complementary: every metric in the
-> merged agent is at or better than the best of either side alone.
+> against the row above them. See the `Baseline` column.
 >
-> Current best: E21 Price Presence Prior, with public HitRate@10 `0.980`,
-> MRR `0.756899`, MTTC `2.820`, and TechnicalScore `0.880670`.
+> Current best: E22 Constraint Satisfaction on All Routes, with public
+> HitRate@10 `0.980`, MRR `0.770470`, MTTC `2.820`, and TechnicalScore
+> `0.884741`. Unlike E21 it also gains under the coverage-stress diagnostic
+> (`+0.005588`), because it is a statement about the conversation rather
+> than about catalog metadata.
 >
 > E21 was developed on `feat/hs` in parallel with E13-E20 and merged after
 > E20, so it is numbered after the branch it merged into rather than by the
@@ -29,7 +30,7 @@
 > scenario hit rate: the entire `+0.012194` is rank quality (MRR
 > `+0.040980`), which is what a tie-breaking prior is expected to buy.
 >
-> **E21 carries a documented transfer risk.** Under T25's coverage-stress
+> **E21, still a retained layer, carries a documented transfer risk.** Under T25's coverage-stress
 > diagnostic its gain reverses: `+0.012194` on the official catalog,
 > `-0.020274` when target price coverage is cut to the catalog-wide rate.
 > No other retained layer reverses. Official metrics still select methods,
@@ -56,8 +57,40 @@
   All formal results use the full 200-session public set, the frozen 50,000-item
   catalog, and the unmodified official evaluator.
 
+| ID | Method | Main change | Automated tests | HitRate@10 | Δ HitRate | MRR | MTTC ↓ | Efficiency | TechnicalScore | Δ Score | Decision | Commit |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| E0 | Weak BM25 baseline | Return BM25 Top-10 directly; no state or questions | 3 | 0.125 | Reference | 0.068034 | 9.810 | 0.1190 | 0.106710 | Reference | Baseline | `3407835` |
+| E1 | Field reranker v1 | Rerank BM25 Top-100 by field coverage | 10 | 0.160 | +0.035 | 0.076750 | 9.460 | 0.1540 | 0.133825 | +0.027115 | **Keep** | `db65ad2` |
+| E1-A | Reranker + BM25 rank prior | Add the original BM25 rank as a bonus to E1 | Targeted | 0.155 | -0.005 | 0.073992 | 9.510 | 0.1490 | 0.129498 | -0.004327 | Reject | Not committed |
+| E2 | Conversation State v1 | Accumulate constraints, handle overrides, ask profile-guided non-repeating questions | 14 | 0.870 | +0.710 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.589999 | Keep | `d770b6f` |
+| E3-A | Fixed clarification | Use a fixed attribute question order | 21 | 0.865 | -0.005 | 0.523492 | 4.640 | 0.6360 | 0.716748 | -0.007076 | Reject | `fa84de2` |
+| E3-B | Profile clarification | Use the E2 profile-first policy as the ablation baseline | 21 | 0.870 | +0.000 | 0.533748 | 4.565 | 0.6435 | 0.723824 | +0.000000 | Previous baseline | `fa84de2` |
+| E3-C | Candidate-aware clarification | Ask first about a covered, varied attribute in the Top-100 candidates | 21 | **0.870** | **+0.000** | **0.544236** | **4.410** | **0.6590** | **0.730071** | **+0.006247** | Superseded by E9 | `fa84de2` |
+| E4-A | Balanced clarification | Prioritize the intersection of profile preferences and current product differences | 23 during experiment | 0.870 | +0.000 | 0.536248 | 4.540 | 0.6460 | 0.725074 | -0.004997 | Reject | Review branch only |
+| E4-B | Always-ask-other probe | Always ask `other`; diagnostic only | 35 | 0.840 | -0.030 | 0.522508 | 3.635 | 0.7365 | 0.724052 | -0.006019 | Reject (diagnostic) | Not separately committed |
+| E5 | Slot-aware override memory | Preserve category/department slots during override; clear the rest | 41 | **0.875** | +0.005 | 0.540300 | **4.290** | 0.6710 | **0.733790** | +0.003719 | Keep (weak evidence) | Included in remote series |
+| E6 | Turn-aware override memory | Also preserve constraints learned from turn 2 onward | 48 | 0.875 | +0.000 | 0.540300 | 4.290 | 0.6710 | 0.733790 | +0.000000 | Reject (no effect) | Included in remote series |
+| E7 | Candidate pool 100 -> 500 | Increase only the BM25 candidate pool | 51 | 0.875 | +0.000 | 0.528762 | 4.190 | 0.6810 | 0.732329 | -0.001461 | Reject | Included in remote series |
+| E8-A | Pool-frequency IDF (incorrect) | Treat candidate-pool term frequency as IDF | 53 | 0.790 | -0.085 | 0.459067 | 4.975 | 0.6025 | 0.653220 | -0.080570 | Reject (reasoning error) | Included in remote series |
+| E8-B | Catalog IDF + pool 500 | Weight with catalog-wide `fts5vocab` document frequency | 54 during experiment | 0.845 | -0.030 | 0.522619 | 4.625 | 0.6375 | 0.706786 | -0.027004 | Reject | Included in remote series |
+| E8-C | Catalog IDF + pool 100 | Same catalog IDF with the candidate pool kept at 100 | 54 during experiment | 0.860 | -0.015 | 0.540980 | 4.640 | 0.6360 | 0.719494 | -0.014296 | Reject | Included in remote series |
+| E9 | Slot conflict resolution | Give each gazetteer term one slot; pool 100 and no IDF | 53 | **0.895** | +0.020 | **0.549056** | **4.215** | 0.6785 | **0.747917** | **+0.014127** | Superseded by E11 | `c1941f6` merge series |
+| E10 | Override-routed IDF | If intent-override detected, then route to use IDF over the whole catalogue | 56 | 0.890 | -0.005 | 0.551708 | 4.270 | 0.6730 | 0.745112 | -0.002805 | REJECTED | Included in remote series|
+| E11 | Popularity prior | Add `1.2 * log1p(rating_number)` to the rerank score | 58 | **0.965** | +0.070 | **0.662125** | **2.965** | **0.8035** | **0.841838** | **+0.093921** | Superseded by E13 | `52789c4` |
+| E12 | Phrase-independent override | Trigger override on a same-slot value conflict, not only the literal simulator sentence | 77 | 0.960 | -0.005 | 0.661292 | 3.005 | 0.7995 | 0.838288 | -0.003550 | Reject (design tradeoff, see report) | Review branch |
+| E13 | Buying/Browsing routing | Classify route at turn 1; reward candidates matching every known constraint, Buying sessions only | 79 | **0.970** | +0.005 | **0.671744** | **2.930** | **0.8070** | **0.847923** | **+0.006085** | Superseded by E18 | `92d4714` |
+| E14 | Expected-value clarification | Score each attribute by Shannon entropy of its value split, not coverage*diversity | 86 | 0.975 | +0.005 | 0.670619 | 3.060 | 0.7940 | 0.847486 | -0.000437 | Reject (close; validation split agrees) | Review branch |
+| E15 | Narrow phrase-independent override | Override trigger only on a conflict with a slot value legitimately established for its own question | 90 | 0.970 | +0.000 | 0.671744 | 2.930 | 0.8070 | 0.847923 | +0.000000 | Reverted on review -- see note above matrix | `review/narrow-phrase-independent-override-implementation` |
+| E16 | Dense retrieval (standalone) | TF-IDF + Truncated SVD replaces BM25 entirely, isolated comparison | 93 | 0.665 | -0.305 | 0.534054 | 5.625 | 0.5375 | 0.600216 | -0.247707 | Reject as standalone; feeds E17 | Review branch |
+| E17 | RRF hybrid retrieval | Fuse BM25 + dense top-100 by Reciprocal Rank Fusion, truncate to 100 | 107 | 0.945 | -0.025 | 0.665696 | 3.065 | 0.7935 | 0.830909 | -0.017014 | Reject (traced: pool truncation evicts good candidates) | Review branch |
+| E18 | Semantic reranking score | Add dense cosine-similarity term to reranker (bi-encoder-style, weight 1.0) | 109 | **0.970** | +0.000 | **0.677607** | **2.920** | **0.8080** | **0.849882** | **+0.001959** | Superseded by E19 | `b3e88b8` |
+| E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | Superseded by E21 | `e9dc276` |
+| E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
+| E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | Superseded by E22 | `fe86b63` |
+| E22 | Constraint satisfaction on all routes | Apply E13's completeness bonus to Browsing sessions too, at the unchanged `4.0` | 158 | **0.980** | +0.000 | **0.770470** | 2.820 | 0.8180 | **0.884741** | **+0.004071** | **Current best** | `feat/hs` |
+| E23 | Turn-recency term weighting | Scale each query term by `1 + w * (arrival_turn - 1)` | 158 | 0.980 | +0.000 | 0.754359 | 2.820 | 0.8180 | 0.879908 | -0.000762 | Reject (monotonic decline, no peak) | `feat/hs` |
   `Δ` is measured against whatever the `Baseline` column names, which is the
-  previous retained method for every row except E22-E25. Those were developed
+  previous retained method for every row except E22-E27. Those were developed
   in parallel on another branch and measured against E11, so their deltas do
   **not** telescope with the rows above them and the column cannot be summed
   down the table.
@@ -100,15 +133,15 @@
 | E19 | Phrase (bigram) bonus | Reward candidates matching the customer's adjacent word-pairs as a literal substring | 115 | prev. retained | **0.980** | +0.010 | **0.715919** | **2.815** | **0.8185** | **0.868476** | **+0.018594** | Superseded by E21 | `e9dc276` |
 | E20 | Query-side stemming | Add each query term's singular form as an extra OR-term (FTS5 tokenizer does no stemming) | 126 | prev. retained | 0.930 | -0.050 | 0.666079 | 3.170 | 0.7830 | 0.821424 | -0.047052 | Reject (traced: broadens fixed-100 retrieval cutoff) | Review branch |
 | E21 | Price presence prior | Add a flat `2.0` bonus for carrying a price at all; developed on `feat/hs`, merged after E20 | 143 | prev. retained | **0.980** | +0.000 | **0.756899** | 2.820 | 0.8180 | **0.880670** | **+0.012194** | **Current best** | `fe86b63` |
-| E22-A | Constraint ledger Stage 0 | Three override-state correctness fixes, measured separately | 103 | E11 (parallel) | 0.965 | +0.000 | 0.662125 | 2.965 | 0.8035 | 0.841838 | +0.000000 | Reject 2 of 3; slot negation guard retained on correctness | Not committed |
-| E22-B | Constraint ledger Stage 1 | Append-only entries with status instead of deletion; query projected from active entries | 118 | E11 (parallel) | **0.975** | +0.010 | **0.677881** | **2.810** | 0.8190 | **0.854664** | **+0.012826** | Keep | See branch |
-| E22-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | E11 (parallel) | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
-| E22-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | E11 (parallel) | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
-| E23-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | E11 (parallel) | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
-| E23-B | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | E11 (parallel) | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
-| E24 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | E11 (parallel) | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | Retired at T36 (marginal `0.000083`) | See branch |
-| E25 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | E11 (parallel) | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
-| E26 | Merged line | E12-E21 rank quality merged with E22-E25 conversational coverage | 195 | E21 | **0.995** | +0.015 | **0.776613** | **2.400** | **0.8600** | **0.902484** | **+0.021814** | **Current best** | See T34 |
+| E24-A | Constraint ledger Stage 0 | Three override-state correctness fixes, measured separately | 103 | E11 (parallel) | 0.965 | +0.000 | 0.662125 | 2.965 | 0.8035 | 0.841838 | +0.000000 | Reject 2 of 3; slot negation guard retained on correctness | Not committed |
+| E24-B | Constraint ledger Stage 1 | Append-only entries with status instead of deletion; query projected from active entries | 118 | E11 (parallel) | **0.975** | +0.010 | **0.677881** | **2.810** | 0.8190 | **0.854664** | **+0.012826** | Keep | See branch |
+| E24-C1 | Ledger term weighting | Scale answered constraints against volunteered ones in the reranker | 127 | E11 (parallel) | 0.970 | -0.005 | 0.676315 | 2.865 | 0.8135 | 0.850594 | -0.004070 | Reject; validation peaks at the off position | Not committed |
+| E24-C | Information-gain probe | Ask an open question after a turn that adds no ledger entry | 127 | E11 (parallel) | **0.980** | +0.005 | **0.698381** | **2.540** | **0.8460** | **0.868714** | **+0.014050** | **Current best** | See branch |
+| E25-A | Catalog quality prior | Add `quality_weight * average_rating` to the rerank score | 127 | E11 (parallel) | 0.980 | +0.000 | 0.704938 | 2.540 | 0.8460 | 0.870681 | +0.001967 full, -0.000052 validation | Reject; development and validation argmax disagree | Not committed |
+| E25-B | Exhaustion-triggered catalog IDF | Apply catalog IDF to rerank weights once the information-gain counter fires | 127 | E11 (parallel) | 0.980 | +0.000 | 0.698381 | 2.540 | 0.8460 | 0.868714 | +0.000000 | Reject; zero sessions changed at any threshold | Not committed |
+| E26 | Implicit-rejection reranking | Penalise already-shown candidates once the conversation is stuck; keep asking instead of assuming exhaustion | 133 | E11 (parallel) | **0.995** | +0.015 | 0.694964 | **2.465** | 0.8535 | **0.876689** | **+0.007975** | Retired at T38 (marginal `0.000083`) | See branch |
+| E27 | Stuck-path clarification policy | Route the persistently-stuck branch through `select_attribute` instead of round-robin | 137 | E11 (parallel) | 0.995 | +0.000 | 0.694964 | 2.465 | 0.8535 | 0.876689 | +0.000000 | Reject; identical score, degenerate behaviour | Not committed |
+| E28 | Merged line | E12-E23 rank quality merged with E24-E27 conversational coverage; merged twice, see T36 and T39 | 195 | E22 | **0.995** | +0.015 | **0.791810** | 2.405 | 0.8595 | **0.906943** | **+0.022202** | **Current best** | See T39 |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -146,11 +179,13 @@
 | E19 Phrase (bigram) bonus | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
 | E20 Query-side stemming | 0.9375 | 0.9500 | 0.866667 | 0.9000 |
 | E21 Price presence prior | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
-| E22-A Stage 0 retained | 0.9500 | **1.0000** | 0.933333 | 0.9000 |
-| E22-B Constraint ledger | 0.9500 | **1.0000** | **1.000000** | 0.9000 |
-| E22-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
-| E24 Implicit-rejection reranking | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
-| E26 Merged line | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
+| E22 Constraint satisfaction, all routes | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
+| E23 Turn-recency weighting | **0.9875** | **1.0000** | **0.933333** | 0.9000 |
+| E24-A Stage 0 retained | 0.9500 | **1.0000** | 0.933333 | 0.9000 |
+| E24-B Constraint ledger | 0.9500 | **1.0000** | **1.000000** | 0.9000 |
+| E24-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
+| E26 Implicit-rejection reranking | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
+| E28 Merged line | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -1254,7 +1289,92 @@ sparser metadata. Evidence:
   [E21 weight sweep](../reports/experiments/price-prior-e21.json),
   [E21 coverage-stress](../reports/experiments/coverage-stress-e21.json).
 
-### T27: Constraint ledger Stage 0, override-state correctness (rejected)
+### T27: Constraint satisfaction on all routes (current best)
+
+- Date: 2026-08-30.
+- Origin: a proposal to rebalance constraints against priors, in two parts --
+  make the satisfaction bonus large enough that priors cannot overturn it,
+  and weight constraints by the turn they arrived on.
+- Premise checked first: the popularity term spans `3.08` (median) to `9.73`
+  (p99) across the catalog, a spread of `6.65` against E13's
+  `COMPLETENESS_BONUS = 4.0`. The described failure is arithmetically real,
+  but only when the *completing* term lands in a cheap field -- an exact
+  match earning full title weight on every constraint wins on match score
+  alone. Both cases pinned by `PriorProofCompletenessTest`.
+- **Prior-proofing was rejected: it does nothing.** Raising the bonus to
+  `8.0` or `16.0` on the Buying route produced `+0.000000` to six decimals,
+  byte-identical output. The constructed failure never decides a session in
+  the Buying pools that actually occur.
+- The gain came from a change that was not proposed: applying the bonus to
+  **Browsing** sessions, which E13 excluded. A Browsing session opens vague
+  but discloses concrete constraints once it answers a clarification
+  question.
+
+  | Arm | Validation delta | Full delta |
+  | --- | ---: | ---: |
+  | bonus 8 / 16, Buying only | +0.000000 | +0.000000 |
+  | **all routes, bonus 4 (shipped)** | +0.003214 | **+0.004071** |
+  | all routes, bonus 16 | **+0.003339** | +0.003288 |
+  | all routes, bonus 40 | +0.003339 | +0.003288 |
+
+  Magnitude does matter stacked on route generalization, but by `+0.000125`
+  validation, saturating at 16.0 (identical at 40.0). Roughly 26:1 in favour
+  of the route change.
+- Change: `COMPLETENESS_ALL_ROUTES = True` in `starter/agent.py`, with
+  `COMPLETENESS_BONUS` unchanged at `4.0`. `bonus 4` was shipped over
+  `bonus 16` because it wins the full set (`+0.000783`) and both
+  coverage-stress measures, losing only validation by `+0.000125`.
+- New tests: 2 in `test_conversation_state.py`, including a negative control
+  that sets `completeness_all_routes = False` and asserts the opposite
+  ordering on the same Browsing session, plus 5 in `test_reranker.py`.
+  158/158 pass.
+- Result: HitRate@10 `0.980 -> 0.980`, MRR `0.756899 -> 0.770470`, MTTC
+  unchanged at `2.820`, TechnicalScore `0.880670 -> 0.884741`
+  (`+0.004071`). No scenario hit rate moves. Pure MRR, as a reordering rule
+  that never changes the candidate pool should be.
+- **Coverage-stress: holds, and helps more.** Official `+0.004071`, stress
+  `+0.005588` (validation `+0.003214` / `+0.005250`). The opposite of E21,
+  whose gain reverses under the same diagnostic. Constraint satisfaction is
+  a statement about the conversation, not about catalog metadata, so
+  degrading target metadata cannot invert it. It does not recover the 3
+  sessions E21 loses under stress; HitRate@10 stays `0.965` there.
+- Decision: **Keep. New current best.**
+- Limitations: reorders only, never rescues a missed session. The
+  `4.0`-versus-`16.0` choice rests on `+0.000783` full against `+0.000125`
+  validation and was decided on parsimony, not a decisive margin. Evidence:
+  [constraint satisfaction on all routes](../reports/experiments/constraint-satisfaction-routing.md),
+  [sweep](../reports/experiments/constraint-rebalance.json),
+  [E22 dual-catalog run](../reports/experiments/constraint-satisfaction-routing.json).
+
+### T28: Turn-recency term weighting (rejected, monotonic)
+
+- Date: 2026-08-30.
+- Hypothesis: later answers are more specific than the opening category, so
+  a term that arrived on turn 4 should outweigh one from turn 1.
+- Change: `term_weights` on `rerank_candidates`, scaling each term by
+  `1 + recency_weight * (arrival_turn - 1)`. The agent records the first
+  turn each surviving term entered the query, rebuilt against
+  `unique_terms` every turn so an override that drops a term also drops its
+  arrival record.
+
+  | `recency_weight` | Validation delta | Full delta | HitRate@10 |
+  | ---: | ---: | ---: | ---: |
+  | 0.1 | -0.000217 | -0.000762 | 0.980 |
+  | 0.25 | -0.003244 | -0.005046 | 0.980 |
+  | 0.5 | -0.016098 | -0.015506 | 0.970 |
+  | 1.0 | -0.026436 | -0.031340 | 0.960 |
+
+- Mechanism traced: retrieval is an accumulating OR query, so the opening
+  category term is what holds the candidate pool on-topic. Down-weighting it
+  relative to later details widens the pool rather than sharpening it, which
+  is why HitRate falls from `0.5` upward.
+- Also negative under coverage-stress (`-0.001824` full), and combining it
+  with E22 was worse than E22 alone (`+0.002876` full against `+0.004071`).
+- Decision: **Reject.** No peak and no plateau -- a clean monotonic decline
+  on both splits. Code path retained at `RECENCY_WEIGHT = 0.0` for ablation,
+  as with `RATING_WEIGHT` and the `entropy` clarification policy.
+
+### T29: Constraint ledger Stage 0, override-state correctness (rejected)
 
 - Date: 2026-08-30
 - Hypothesis: `scripts/trace_session` showed that 26 of 30 intent_override
@@ -1280,7 +1400,7 @@ sparser metadata. Evidence:
   sit near the noise floor of a 200-session set.
 - Evidence: [Stage 0 report](../reports/experiments/constraint-ledger-stage0.md).
 
-### T28: Constraint ledger Stage 1, append-only state and query projection (keep)
+### T30: Constraint ledger Stage 1, append-only state and query projection (keep)
 
 - Date: 2026-08-30
 - Change: `_session_terms` removed from the scored path. Every token becomes a
@@ -1310,10 +1430,10 @@ sparser metadata. Evidence:
   reproduces E11 at `0.841838` / `0.844722`.
 - Evidence: [Stage 1 report](../reports/experiments/constraint-ledger-stage1.md).
 
-### T29: Constraint ledger Stage 2, weighting and the information-gain probe
+### T31: Constraint ledger Stage 2, weighting and the information-gain probe
 
 - Date: 2026-08-30
-- E22-C1, term weighting by source: the ledger records whether a constraint was
+- E24-C1, term weighting by source: the ledger records whether a constraint was
   volunteered or answered; `answered_weight` scales the latter in the reranker.
   Validation by weight: `0.6` `0.836582`, `1.0` (off) `0.853190`, `1.2`
   `0.851524`, `1.5` `0.850040`. The optimum is the off position on both sides.
@@ -1321,7 +1441,7 @@ sparser metadata. Evidence:
   as no-ops at their defaults, per the T13 precedent that kept `idf`.
   `decay_lambda` stays `0` and was never swept: the public set contains no
   signal from which to fit a decay rate.
-- E22-C, information-gain probe: retrieval is a pure function of the projected
+- E24-C, information-gain probe: retrieval is a pure function of the projected
   terms, so a turn adding no active entry cannot change the ranking. After `K`
   consecutive such turns the agent asks an open question instead of continuing
   down the attribute order. Validation by threshold: `0` `0.858051`, `1`
@@ -1335,7 +1455,7 @@ sparser metadata. Evidence:
 - Boundary moves from `0.900000` to `1.000000`. It had been unchanged through
   every popularity weight in T15 and through Stages 0 and 1. A boundary session
   is one where every reply adds nothing, which is exactly the probe's trigger.
-- Dead turns: `163/586` at E11, `140/557` at E22-B, `85/504` at E22-C. The count
+- Dead turns: `163/586` at E11, `140/557` at E24-B, `85/504` at E24-C. The count
   of sessions containing a dead turn is unchanged at 57, correctly: the probe
   cannot prevent the first one, because that turn is the signal.
 - Limitation: this is the experiment most exposed to the simulator. The gain
@@ -1343,10 +1463,10 @@ sparser metadata. Evidence:
   constraints, which T9 documented and warned may not hold privately. The
   mechanism is a general strategy; the size of the gain is not guaranteed to
   transfer. If the private simulator treats `other` like any other attribute,
-  this degrades toward E22-B rather than breaking.
+  this degrades toward E24-B rather than breaking.
 - Evidence: [Stage 2 report](../reports/experiments/constraint-ledger-stage2.md).
 
-### T30: Rank-margin diagnostic and the catalog quality prior (rejected)
+### T32: Rank-margin diagnostic and the catalog quality prior (rejected)
 
 - Date: 2026-08-30
 - Purpose: with HitRate@10 at `0.980`, decide whether the remaining effort
@@ -1362,7 +1482,7 @@ sparser metadata. Evidence:
 - Of 40 sessions hitting at rank 2 or 3, 23 are decided by popularity rather
   than by matching. Median score gap to rank 1 is `0.669`, minimum `0.003`, and
   23 of 40 gaps are below one field-weight unit.
-- E23-A: `average_rating` has full catalog coverage and appeared in no scored
+- E25-A: `average_rating` has full catalog coverage and appeared in no scored
   path. Target median sits at the 66.8th catalog percentile against the 99.5th
   for `rating_number`; only 16/200 targets rate below 4.0 against 32.6% of the
   catalog. Validation by weight: `0.0` `0.867378`, `0.5` `0.865258`, `1.0`
@@ -1377,19 +1497,19 @@ sparser metadata. Evidence:
   the clean gazetteer and ledger is a hypothesis worth testing, not a prediction.
 - Evidence: [rank-margin diagnostic](../reports/experiments/rank-margin-diagnostic.md).
 
-### T31: Exhaustion-triggered catalog IDF (rejected, with a mechanism)
+### T33: Exhaustion-triggered catalog IDF (rejected, with a mechanism)
 
 - Date: 2026-08-30
 - Hypothesis: the three in-pool Buying misses all carry hard constraints made
   of generic material words, and the reranker weights every term identically.
   E8 rejected catalog IDF applied unconditionally and E10 rejected it routed on
-  an override signal; this applies it on a third signal, the E22-C
+  an override signal; this applies it on a third signal, the E24-C
   information-gain counter, which is a perfect predictor of failure on the
   public set. The reasoning was that discounting a term while information is
   still arriving risks discarding a constraint the customer has not finished
   expressing, whereas once the counter fires the term list is final.
 - Result: HitRate@10 `0.980`, MRR `0.698381`, MTTC `2.540`, TechnicalScore
-  `0.868714` at thresholds 1 and 2 alike, identical in every digit to E22-C.
+  `0.868714` at thresholds 1 and 2 alike, identical in every digit to E24-C.
   **Zero of 200 sessions changed hit, hit turn, or rank.** The mechanism was
   verified to fire: per-term multipliers move from a flat `1.0` to a `0.93` to
   `7.42` spread on triggering turns.
@@ -1407,26 +1527,26 @@ sparser metadata. Evidence:
   quantities here, so any rarity-based weighting promotes conversational
   scaffolding over stated constraints. E8 and E10 recorded the outcome; none of
   the reports recorded this cause.
-- Interaction with T27: Stage 0 measured that *removing* those same template
+- Interaction with T29: Stage 0 measured that *removing* those same template
   words costs two intent_override sessions, because they widen the FTS5 `MATCH`
-  expression and change pool composition. T31 measures that *weighting* them is
+  expression and change pool composition. T33 measures that *weighting* them is
   worse than weighting nothing. The template words must therefore be present
   and unweighted, which is what the retained agent already does. Neither half
   is obvious alone, and a query-cleaning step cannot be evaluated independently
   of a weighting step.
 - Decision: reject. `exhaustion_idf` and `_effective_term_weights` removed;
-  `starter/agent.py` is byte-identical to E22-C. The optional `idf` argument on
+  `starter/agent.py` is byte-identical to E24-C. The optional `idf` argument on
   `rerank_candidates` stays, per T13.
 - Next step: no term-weighting scheme derived from catalog statistics is likely
   to work while the query contains evaluator phrasing. A measure computed over
-  product vocabulary alone would have to come first, and T27 shows that simply
+  product vocabulary alone would have to come first, and T29 shows that simply
   deleting the conversational vocabulary costs sessions.
 - Evidence: [exhaustion-triggered IDF](../reports/experiments/exhaustion-triggered-idf.md).
 
-### T32: Implicit-rejection reranking (current best)
+### T34: Implicit-rejection reranking (current best)
 
 - Date: 2026-08-30
-- Hypothesis: T30 and T31 both failed to move the four stuck sessions, and
+- Hypothesis: T32 and T33 both failed to move the four stuck sessions, and
   widening the pool was ruled out by pool-position data. What remained unused
   was negative evidence the conversation supplies for free: a shopper who saw
   ten products and kept talking has implicitly declined them, and returning the
@@ -1483,12 +1603,12 @@ sparser metadata. Evidence:
   unreachable at pool position 187. The penalty counts showings, not positions.
 - Evidence: [implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md).
 
-### T33: Stuck-path clarification policy (rejected on behaviour, not score)
+### T35: Stuck-path clarification policy (rejected on behaviour, not score)
 
 - Date: 2026-08-30
 - Question: when the information-gain counter says the conversation is stuck,
   the agent bypasses `select_attribute` entirely and round-robins over
-  `DEFAULT_ATTRIBUTE_ORDER`. That was the crudest decision in E24 and it was
+  `DEFAULT_ATTRIBUTE_ORDER`. That was the crudest decision in E26 and it was
   never tested. Routing the branch back through the candidate-aware policy,
   with the asked set dropped so it may repeat, should in principle pick a
   better question than blind rotation.
@@ -1498,7 +1618,7 @@ sparser metadata. Evidence:
   fires 10 times in 2 sessions (`2.0%`). 404 turns (`82.1%`) take the normal
   Layer-4 path and 78 (`15.9%`) are the first stuck turn, which asks `other`
   under both variants. Of the two affected sessions, `public_0020` is
-  unreachable at pool position 187 and `public_0179` hits either way. E24 had
+  unreachable at pool position 187 and `public_0179` hits either way. E26 had
   already all but eliminated the persistently-stuck state: before it, four
   sessions were stuck for six turns each.
 - Decided on behaviour instead. Under the policy variant a stuck agent asks the
@@ -1517,18 +1637,18 @@ sparser metadata. Evidence:
   conversation stops asking one dead question.
 
 
-### T34: Merging the two parallel lines (current best)
+### T36: Merging the two parallel lines (current best)
 
 - Date: 2026-08-30
 - Two lines were developed in parallel without knowledge of each other.
   `feat/hs` produced E12-E21, which improved rank quality: Buying/Browsing
   routing, semantic reranking, the phrase bonus, the price prior.
-  `experiment/constraint-ledger` produced E22-E25, which improved
+  `experiment/constraint-ledger` produced E22-E27, which improved
   conversational coverage: the append-only constraint ledger, the
   information-gain probe, the implicit-rejection penalty.
 - They turned out to be complementary rather than overlapping.
 
-  | Metric | E21 alone | E24 alone | Merged |
+  | Metric | E21 alone | E26 alone | Merged |
   | --- | ---: | ---: | ---: |
   | HitRate@10 | 0.980 | **0.995** | **0.995** |
   | MRR | **0.756899** | 0.694964 | **0.776613** |
@@ -1536,14 +1656,14 @@ sparser metadata. Evidence:
   | TechnicalScore | 0.880670 | 0.876689 | **0.902484** |
 
   Every metric lands at or better than the best of either side. MRR is
-  `+0.019714` above E21 alone and MTTC `-0.065` below E24 alone, so the merge
+  `+0.019714` above E21 alone and MTTC `-0.065` below E26 alone, so the merge
   is not simply the union of two disjoint gains.
 - Merge decisions worth recording:
   - `starter/reranker.py` took the `feat/hs` version as the base. Its
     restructuring (`_best_weight_by_term` extracted, `_match_score` signature
     changed, five new parameter groups) is intact; `shown_penalty` was added as
     one more subtracted term. The scoring function now carries seven terms.
-  - E22-C1's `term_weights` machinery was removed entirely rather than merged.
+  - E24-C1's `term_weights` machinery was removed entirely rather than merged.
     It was already a measured no-op and would have been dead code after the
     restructuring.
   - E13's `_classify_route` call had to be moved by hand. The automatic merge
@@ -1572,12 +1692,12 @@ sparser metadata. Evidence:
   values are stable across those versions and the reported score does not
   depend on the environment it was measured in.
 
-### T35: Merged-system ablation
+### T37: Merged-system ablation
 
 - Date: 2026-08-30
 - Purpose: the `Δ` column records what a method bought the day it was added.
   After merging two parallel lines that is no longer a usable ranking of what
-  matters, both because E22-E25's deltas are measured against E11 and because
+  matters, both because E22-E27's deltas are measured against E11 and because
   a mechanism can stop paying once later mechanisms rescue the same sessions.
   Each retained mechanism was removed from the merged agent one at a time and
   the official evaluator re-run.
@@ -1588,20 +1708,20 @@ sparser metadata. Evidence:
   | Mechanism | Marginal |
   | --- | ---: |
   | Popularity prior (E11) | **-0.060171** |
-  | Constraint ledger (E22-B) | -0.012000 |
+  | Constraint ledger (E24-B) | -0.012000 |
   | Price presence prior (E21) | -0.012368 |
-  | Information-gain probe (E22-C) | -0.009731 |
+  | Information-gain probe (E24-C) | -0.009731 |
   | Phrase bigram bonus (E19) | -0.009239 |
   | Buying/Browsing routing (E13) | -0.004612 |
   | Semantic reranking (E18) | **-0.001723** |
-  | Implicit-rejection penalty (E24) | **-0.000083** |
+  | Implicit-rejection penalty (E26) | **-0.000083** |
 
 - **The popularity prior dwarfs everything built since.** Removing E11 costs
   three times the next largest mechanism and roughly the sum of all the others.
   Ten experiments across two parallel lines have collectively added less than
   that one prior, and any description of this system that omits that is
   misleading about where its performance comes from.
-- **E24 has stopped paying.** `0.000083`, with MRR fractionally higher without
+- **E26 has stopped paying.** `0.000083`, with MRR fractionally higher without
   it. It was worth `+0.014050` on its own line; the three Buying sessions it
   rescued are now rescued earlier by the phrase bonus, the price prior and
   semantic reranking, so it fires after the problem is already solved. Removing
@@ -1618,15 +1738,15 @@ sparser metadata. Evidence:
   the mechanisms currently present, not useless on the private 800.
 - Evidence: [merged-system ablation](../reports/experiments/merged-system-ablation.md).
 
-### T36: Retiring the implicit-rejection penalty
+### T38: Retiring the implicit-rejection penalty
 
 - Date: 2026-08-30
-- Reason: T35 measured E24's marginal contribution in the merged system at
+- Reason: T37 measured E26's marginal contribution in the merged system at
   `0.000083`, with MRR fractionally higher without it. On its own line it was
   worth `+0.014050`; the three Buying sessions it rescued are now rescued
   earlier by the phrase bonus, the price prior and semantic reranking, so the
   mechanism fires after the problem has already been solved.
-- Second reason, independent of score: E24 was the only part of this system
+- Second reason, independent of score: E26 was the only part of this system
   that needed an argument about `docs/submission_rules.md` requiring
   `recommendations` to be "ordered best to worst". The argument was sound at
   weight `1.0` -- the penalty was about one field-weight unit against match
@@ -1640,7 +1760,7 @@ sparser metadata. Evidence:
   open question once and then cycling named attributes rather than concluding
   the customer has nothing left to say. Two tests that protected probe
   behaviour rather than the penalty moved to `StuckConversationTest`.
-- Result: `0.902401`, exactly T35's prediction. HitRate@10 `0.995`, MRR
+- Result: `0.902401`, exactly T37's prediction. HitRate@10 `0.995`, MRR
   `0.776669`, MTTC `2.405`; Buying `0.987500`, Browsing, Boundary and Intent
   Override all `1.000000`. No scenario changes.
 - Automated tests: 195 before, 188 after.
@@ -1649,6 +1769,37 @@ sparser metadata. Evidence:
   that case, because a row's `Delta` is fixed on the day it is written. Only a
   periodic ablation can, and one is worth running again whenever a new
   mechanism lands.
+
+
+### T39: Second merge with `feat/hs` (current best)
+
+- Date: 2026-08-30
+- `feat/hs` pushed E22 (constraint satisfaction on all routes) and E23
+  (turn-recency term weighting, rejected) after the first merge. Merging them
+  in raises the combined agent from `0.902401` to **`0.906943`**: HitRate@10
+  `0.995` unchanged, MRR `0.776669 -> 0.791810`, MTTC `2.405` unchanged, every
+  scenario unchanged. E22's `+0.004542` here is smaller than the `+0.004071` it
+  measured on its own line, which is what a bonus overlapping with existing
+  ranking should look like.
+- Conflicts were small: one in `starter/agent.py` (both sides added constructor
+  assignments, both kept) and five in this file, all numbering.
+- **Numbering collided a second time.** This line had already been renumbered
+  to E22-E26 after the first merge; `feat/hs` then took E22 and E23, and T27
+  and T28. It is renumbered again, by `+2`: E24-A/B/C1/C, E25-A/B, E26, E27,
+  E28, and T29-T38. Only this line's numbers were rewritten; `feat/hs` numbers
+  were left exactly as pushed.
+- The root cause is that this branch has not been pushed, so the other line
+  cannot see which numbers are taken. Renumbering again on the next push is
+  likely unless the branch lands or a block is reserved. This is a process
+  observation, not an experiment result.
+- **E23 independently reproduces E24-C1's rejection.** `feat/hs` scaled each
+  query term by `1 + w * (arrival_turn - 1)` and found it monotonic, so the
+  optimum was `w = 0`. This line scaled answered constraints against
+  volunteered ones and found the optimum at the off position. Two different
+  formulations of "weight query terms by when or how they arrived", measured
+  independently on two branches, both landing on no weighting at all. That is
+  stronger evidence than either result alone.
+- Automated tests: 195, all passing.
 
   ## 5. Current automated test coverage
 
@@ -1660,7 +1811,7 @@ sparser metadata. Evidence:
   | `test_catalog_variants.py` | 5 | Official/stress/dual mode resolution and rebuild-on-stale |
   | `test_clarification.py` | 3 | Fixed/profile difference, candidate grounded-attribute selection, and `other` probe |
   | `test_clarification_ablation.py` | 2 | Multiple policies and splits on the real FTS5 evaluator |
-  | `test_conversation_state.py` | 40 | Accumulation, negation, slot-aware override, routing, fallback behavior, policy selection and default |
+  | `test_conversation_state.py` | 42 | Accumulation, negation, slot-aware override, routing, fallback behavior, policy selection and default |
   | `test_coverage_stress.py` | 11 | Deterministic masking, invariants, atomic writes, path-collision rejection |
   | `test_dense.py` | 11 | TF-IDF + SVD index build, projection, and search |
   | `test_dual_catalog_evaluation.py` | 2 | Official/stress/delta payload shape |
@@ -1669,12 +1820,12 @@ sparser metadata. Evidence:
   | `test_experiment_split.py` | 1 | Fixed split size, stratification, and no dev/validation overlap |
   | `test_gazetteer.py` | 16 | Vocabulary mining, normalization, coverage, and one-slot precedence |
   | `test_popularity_sweep.py` | 2 | Weight/split/difficulty rows and dual-catalog deltas |
-  | `test_reranker.py` | 24 | Complete-constraint priority, BM25 tie order, catalog IDF, popularity, price, rating, semantic, and phrase terms |
+  | `test_reranker.py` | 29 | Complete-constraint priority, BM25 tie order, catalog IDF, popularity, price, rating, semantic, and phrase terms |
   | `test_session_viewer.py` | 9 | Transcript recording and viewer server |
   | `test_slots.py` | 5 | Whole-word, singular/plural, longest-match, and slot assignment behavior |
-  | `test_ledger.py` | 30 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, probe thresholds, rejection penalty, slot/ledger equivalence |
+  | `test_ledger.py` | 23 | Slot assignment, `slot=None` survival, status transitions, restatement, projection order and cap, probe thresholds, slot/ledger equivalence |
 | `test_session_trace.py` | 13 | Override keep/drop classification, normalization loss, dead-turn detection, trace/evaluator agreement |
-| **Total** | **188** | Current full regression suite (195 before E24 was retired at T36) |
+| **Total** | see below | Run the suite; per-module counts have drifted |
 
 The per-module counts for the older modules have drifted as experiments were
 added. The authoritative number is whatever `python -m unittest discover -s
@@ -1748,6 +1899,7 @@ tests` reports.
 - [Slot memory and retrieval ablation](../reports/experiments/slot-memory-and-retrieval-ablation.md)
 - [Popularity prior](../reports/experiments/popularity-prior.md)
 - [Price and rating priors](../reports/experiments/price-rating-prior.md)
+- [Constraint satisfaction on all routes](../reports/experiments/constraint-satisfaction-routing.md)
 - [Adaptive retrieval design](superpowers/specs/2026-08-29-adaptive-intent-aware-retrieval-design.md)
 - [Constraint ledger design](designs/2026-08-30-constraint-ledger-design.md)
 - [Constraint ledger Stage 0](../reports/experiments/constraint-ledger-stage0.md)

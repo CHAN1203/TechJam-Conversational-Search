@@ -12,7 +12,7 @@ Validation TechnicalScore `0.853190 -> 0.867378` (`+0.014188`), full-set
 0.868714`, `+0.026876`.
 
 - Date: 2026-08-30
-- Baseline: E22-B, `state_model="ledger"`, validation `0.853190`
+- Baseline: E24-B, `state_model="ledger"`, validation `0.853190`
 - Design: [constraint ledger](../../docs/designs/2026-08-30-constraint-ledger-design.md)
 - Split: seed `techjam-clarification-v1`, 80 validation sessions
 
@@ -38,7 +38,7 @@ constraint came from carries no ranking signal this pipeline can use.
 **Decision: reject.** The `term_weights` argument and
 `ConstraintLedger.projection_weights` were initially retained as no-ops at
 their defaults, following the T13 precedent that kept the tested `idf`
-argument. They were **removed entirely during the E26 merge**: `_match_score`
+argument. They were **removed entirely during the E28 merge**: `_match_score`
 was restructured upstream and carrying a measured no-op through that
 restructuring would have been pure dead code. The `source` field on ledger
 entries stays, since it is data rather than behaviour and remains the one
@@ -75,7 +75,7 @@ Selection followed the workflow and used validation alone.
 
 ### Result at `no_gain_probe = 1`
 
-| Metric | E22-B | E22-C | Δ |
+| Metric | E24-B | E24-C | Δ |
 | --- | ---: | ---: | ---: |
 | HitRate@10 | 0.975 | **0.980** | +0.005 |
 | MRR | 0.677881 | **0.698381** | +0.020500 |
@@ -84,7 +84,7 @@ Selection followed the workflow and used validation alone.
 | **TechnicalScore** | 0.854664 | **0.868714** | **+0.014050** |
 | **Validation** | 0.853190 | **0.867378** | **+0.014188** |
 
-| Scenario | E22-B | E22-C |
+| Scenario | E24-B | E24-C |
 | --- | ---: | ---: |
 | Buying | 0.950000 | 0.950000 |
 | Browsing | 1.000000 | 1.000000 |
@@ -104,8 +104,8 @@ condition the probe detects.
 | Configuration | Dead turns | Sessions containing one |
 | --- | ---: | ---: |
 | E11 slots | 163 / 586 (27.8%) | — |
-| E22-B ledger | 140 / 557 (25.1%) | 57 / 200 |
-| E22-C probe = 1 | **85 / 504 (16.9%)** | 57 / 200 |
+| E24-B ledger | 140 / 557 (25.1%) | 57 / 200 |
+| E24-C probe = 1 | **85 / 504 (16.9%)** | 57 / 200 |
 
 The count of sessions containing a dead turn is unchanged at 57, which is
 correct and worth stating: the probe cannot prevent the first dead turn,
@@ -116,7 +116,7 @@ fourth.
 
 | # | Condition | Result |
 | --- | --- | --- |
-| 1 | validation exceeds E22-B's `0.853190` | **pass**, `0.867378` |
+| 1 | validation exceeds E24-B's `0.853190` | **pass**, `0.867378` |
 | 2 | no validation scenario HitRate@10 decreases | **pass** |
 | 3 | the signal fires on sessions with dead turns and not on others | **pass**, with a caveat below |
 
@@ -130,7 +130,7 @@ written implied they were.
 ## Decision
 
 - **Term weighting: reject.** Validation peaks at the off position.
-- **Information-gain probe: retain at `no_gain_probe=1`** as **E22-C**.
+- **Information-gain probe: retain at `no_gain_probe=1`** as **E24-C**.
 
 Recommended configuration: `Agent(state_model="ledger", no_gain_probe=1)`.
 Constructor defaults remain `state_model="slots"` and `no_gain_probe=None`, so
@@ -149,7 +149,7 @@ Automated tests: 118 before, 127 after.
   stopped yielding and asking openly instead -- is a general conversational
   strategy; the *size of the gain* is not guaranteed to transfer. If the
   private simulator treats `other` like any other attribute, this experiment
-  degrades toward E22-B rather than breaking, because the probe only changes
+  degrades toward E24-B rather than breaking, because the probe only changes
   which question is asked.
 - Boundary reaching `1.000000` is ten sessions out of ten. It cannot support a
   claim about the 800 private sessions.

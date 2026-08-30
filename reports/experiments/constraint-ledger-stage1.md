@@ -52,7 +52,7 @@ Two Stage 0 findings shaped the design directly:
 
 ## Results
 
-| Metric | E11 slots | E22-B ledger | Δ |
+| Metric | E11 slots | E24-B ledger | Δ |
 | --- | ---: | ---: | ---: |
 | HitRate@10 | 0.965 | **0.975** | +0.010 |
 | MRR | 0.662125 | **0.677881** | +0.015756 |
@@ -127,7 +127,7 @@ holds.
 
 ## Decision
 
-Retain as **E22-B**. `state_model="ledger"` becomes the recommended
+Retain as **E24-B**. `state_model="ledger"` becomes the recommended
 configuration; `slots` remains the constructor default until the ledger has been
 exercised further, so E11 stays reproducible without a flag.
 

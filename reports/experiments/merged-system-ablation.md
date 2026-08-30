@@ -18,7 +18,7 @@ The `Delta Score` column means "change against the previous retained method".
 Every row was measured on the system as it stood at that moment. Two things
 break that reading here:
 
-1. E22-E25 were developed in parallel with E12-E21 and measured against E11,
+1. E22-E27 were developed in parallel with E12-E21 and measured against E11,
    so their deltas do not telescope with the rows above them.
 2. Even within one line, a delta is a historical fact, not a current one. A
    mechanism that recovered three sessions in isolation may recover none once
@@ -33,13 +33,13 @@ measured against the same system.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | *(nothing -- full system)* | 0.902484 | — | 0.995 | 0.776613 | 2.400 |
 | Popularity prior (E11) | 0.842313 | **-0.060171** | 0.990 | 0.599375 | 2.625 |
-| Constraint ledger + probe + penalty (E22-E24) | 0.880670 | **-0.021814** | 0.980 | 0.756899 | 2.820 |
+| Constraint ledger + probe + penalty (E22-E26) | 0.880670 | **-0.021814** | 0.980 | 0.756899 | 2.820 |
 | Price presence prior (E21) | 0.890116 | -0.012368 | 0.995 | 0.736385 | 2.415 |
-| Information-gain probe + penalty (E22-C, E24) | 0.892670 | -0.009814 | 0.990 | 0.769565 | 2.660 |
+| Information-gain probe + penalty (E24-C, E26) | 0.892670 | -0.009814 | 0.990 | 0.769565 | 2.660 |
 | Phrase bigram bonus (E19) | 0.893245 | -0.009239 | 0.995 | 0.746149 | 2.405 |
 | Buying/Browsing routing (E13) | 0.897872 | -0.004612 | 0.995 | 0.761573 | 2.405 |
 | Semantic reranking (E18) | 0.900761 | **-0.001723** | 0.995 | 0.769871 | 2.385 |
-| Implicit-rejection penalty (E24) | 0.902401 | **-0.000083** | 0.995 | 0.776669 | 2.400 |
+| Implicit-rejection penalty (E26) | 0.902401 | **-0.000083** | 0.995 | 0.776669 | 2.400 |
 
 Removing the whole constraint-ledger stack reproduces E21 exactly at
 `0.880670`, which confirms the harness: the ablation of our line lands on the
@@ -69,7 +69,7 @@ comes from.
 
 ### Two mechanisms have stopped paying
 
-**The implicit-rejection penalty (E24) contributes `0.000083`** -- within
+**The implicit-rejection penalty (E26) contributes `0.000083`** -- within
 noise, and MRR is fractionally *higher* without it (`0.776669` against
 `0.776613`). It was worth `+0.014050` when measured on its own line. What
 changed is that the three Buying sessions it rescued are now rescued by better
@@ -82,7 +82,7 @@ about the submission rule requiring recommendations "ordered best to worst".
 That argument was sound at weight `1.0`, but not having to make it is better
 than making it for `0.000083`.
 
-**Acted on.** E24 was removed on 2026-08-30 (T36). The agent scores `0.902401`
+**Acted on.** E26 was removed on 2026-08-30 (T38). The agent scores `0.902401`
 without it, exactly this table's prediction, with every scenario hit rate
 unchanged. `rejection_weight`, `_shown_penalty`, `_session_shown` and the
 reranker's `shown_penalty` parameter are gone; the two tests that protected

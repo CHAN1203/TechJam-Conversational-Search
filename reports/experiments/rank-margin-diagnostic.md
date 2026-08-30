@@ -7,14 +7,14 @@ result reorders what is worth doing next, so it is recorded here rather than
 left in a conversation.
 
 - Date: 2026-08-30
-- Configuration measured: E22-C, `Agent(state_model="ledger", no_gain_probe=1)`,
+- Configuration measured: E24-C, `Agent(state_model="ledger", no_gain_probe=1)`,
   full public TechnicalScore `0.868714`
 - Commands: `python -m scripts.trace_session`, plus per-turn candidate-pool
   inspection against the same FTS5 query the agent issues
 
 ## Why this diagnostic
 
-E22-C reaches HitRate@10 `0.980`, so only four sessions are unfound. The
+E24-C reaches HitRate@10 `0.980`, so only four sessions are unfound. The
 question is whether the remaining effort belongs to recall or to ranking.
 
 | Lever | TechnicalScore now | If fully realised | Headroom |

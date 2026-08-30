@@ -115,6 +115,17 @@ def _is_intent_override(message: str) -> bool:
 # enough that a candidate missing several field-weighted terms cannot win on
 # completeness alone.
 COMPLETENESS_BONUS = 4.0
+# E22: applied on every route, not just Buying as in E13. Browsing sessions
+# accumulate concrete constraints from clarification answers even though they
+# opened vague, and rewarding a candidate that satisfies all of them is worth
+# +0.004071 public TechnicalScore. Raising the bonus itself was swept and
+# does nothing on its own (+0.000000 at both 8.0 and 16.0 buying-only), so it
+# stays at one title-weight unit -- see reports/experiments/constraint-satisfaction-routing.md.
+COMPLETENESS_ALL_ROUTES = True
+# Scales each query term by 1 + RECENCY_WEIGHT * (arrival_turn - 1), so a
+# constraint answered on a later turn outweighs the opening category. 0.0
+# leaves every term equal, which is the behaviour through E21.
+RECENCY_WEIGHT = 0.0
 
 
 def _classify_route(message_slots: dict[str, list[str]]) -> str:
@@ -163,9 +174,15 @@ class Agent:
         retrieval_mode: str = "bm25",
         semantic_weight: float = SEMANTIC_WEIGHT,
         phrase_weight: float = PHRASE_WEIGHT,
+        completeness_bonus: float = COMPLETENESS_BONUS,
+        completeness_all_routes: bool = COMPLETENESS_ALL_ROUTES,
+        recency_weight: float = RECENCY_WEIGHT,
     ) -> None:
         if state_model not in STATE_MODELS:
             raise ValueError(f"unsupported state model: {state_model}")
+        self.completeness_bonus = completeness_bonus
+        self.completeness_all_routes = completeness_all_routes
+        self.recency_weight = recency_weight
         self.phrase_weight = phrase_weight
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
@@ -185,6 +202,7 @@ class Agent:
         self._session_ledgers: dict[str, ConstraintLedger] = {}
         self._session_no_gain: dict[str, int] = {}
         self._session_route: dict[str, str] = {}
+        self._session_term_turn: dict[str, dict[str, int]] = {}
         self._build_index()
 
     def _build_index(self) -> None:
@@ -289,6 +307,7 @@ class Agent:
         self._session_ledgers[session_id] = ConstraintLedger()
         self._session_no_gain[session_id] = 0
         self._session_route.pop(session_id, None)
+        self._session_term_turn[session_id] = {}
 
     def _advance_slots(
         self,
@@ -400,8 +419,22 @@ class Agent:
         )
         unique_terms = advance(session_id, user_message, current_terms, message_slots, turn)
         self._session_terms[session_id] = unique_terms
+        # First turn each surviving term entered the query. Rebuilt against
+        # unique_terms every turn so an override that drops a term also drops
+        # its arrival record: if the same word returns later it is genuinely
+        # new information and dates from the turn it came back.
+        arrivals = self._session_term_turn.get(session_id, {})
+        arrivals = {term: arrivals.get(term, turn) for term in unique_terms}
+        self._session_term_turn[session_id] = arrivals
+        term_weights: dict[str, float] | None = None
+        if self.recency_weight:
+            term_weights = {
+                term: 1.0 + self.recency_weight * (arrived - OPENING_TURN)
+                for term, arrived in arrivals.items()
+            }
+
         required_terms: set[str] = set()
-        if self._session_route[session_id] == "buying":
+        if self.completeness_all_routes or self._session_route[session_id] == "buying":
             # Read off the same slot memory the override logic already
             # maintains; intersect with this turn's actual query terms so a
             # normalization difference (e.g. gazetteer singularization) can
@@ -473,11 +506,12 @@ class Agent:
                     price_weight=self.price_weight,
                     rating_weight=self.rating_weight,
                     required_terms=required_terms,
-                    completeness_bonus=COMPLETENESS_BONUS,
+                    completeness_bonus=self.completeness_bonus,
                     semantic_scores=semantic_scores,
                     semantic_weight=self.semantic_weight,
                     phrase_terms=extract_bigrams(user_message),
                     phrase_weight=self.phrase_weight,
+                    term_weights=term_weights,
                 )
             ]
         asked = self._session_asked_attributes[session_id]
