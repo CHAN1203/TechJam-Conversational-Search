@@ -9,7 +9,7 @@ from pathlib import Path
 from starter.clarification import DEFAULT_ATTRIBUTE_ORDER, select_attribute
 from starter.ledger import ANSWERED, VOLUNTEERED, ConstraintLedger, assign_slots
 from starter.slots import extract_slots
-from starter.reranker import extract_bigrams, rerank_candidates
+from starter.reranker import extract_phrases, rerank_candidates
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
@@ -57,6 +57,11 @@ SEMANTIC_WEIGHT = 1.0
 # reports/experiments/phrase-bonus.md. 1.0 was the peak: TechnicalScore
 # 0.849882 -> 0.868476, 2 sessions recovered, 0 lost.
 PHRASE_WEIGHT = 1.0
+# E31: longest contiguous word run rewarded as a literal substring. The
+# simulator derives a customer's constraint from the target's own
+# features/details text, so a disclosed constraint is close to a verbatim span
+# of the target listing. 2 is E19's bigram behaviour exactly.
+PHRASE_MAX_N = 2
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -173,6 +178,7 @@ class Agent:
         retrieval_mode: str = "bm25",
         semantic_weight: float = SEMANTIC_WEIGHT,
         phrase_weight: float = PHRASE_WEIGHT,
+        phrase_max_n: int = PHRASE_MAX_N,
         completeness_bonus: float = COMPLETENESS_BONUS,
         completeness_all_routes: bool = COMPLETENESS_ALL_ROUTES,
         recency_weight: float = RECENCY_WEIGHT,
@@ -183,6 +189,7 @@ class Agent:
         self.completeness_all_routes = completeness_all_routes
         self.recency_weight = recency_weight
         self.phrase_weight = phrase_weight
+        self.phrase_max_n = phrase_max_n
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.state_model = state_model
@@ -520,7 +527,7 @@ class Agent:
                     completeness_bonus=self.completeness_bonus,
                     semantic_scores=semantic_scores,
                     semantic_weight=self.semantic_weight,
-                    phrase_terms=extract_bigrams(user_message),
+                    phrase_terms=extract_phrases(user_message, self.phrase_max_n),
                     phrase_weight=self.phrase_weight,
                     term_weights=term_weights,
                 )

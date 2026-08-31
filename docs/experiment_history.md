@@ -8,7 +8,16 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: the merged line, at public HitRate@10 `0.995`, MRR `0.791810`,
+> Current best: E32 Category field weight, at public HitRate@10 `0.995`, MRR
+> `0.823353`, MTTC `2.355`, and TechnicalScore `0.917406`. It corrects a
+> reliability ordering rather than adding a signal: the simulator quotes the
+> target's category path into the opening message, so `categories` is the one
+> field guaranteed to overlap the query, yet it had been weighted below
+> `title` since E1. Unlike E21, its gain **grows** under the coverage-stress
+> diagnostic (`+0.011213` official, `+0.021101` stressed) and recovers three
+> stressed sessions of HitRate@10. See E32.
+>
+> Previous best: the merged line, at public HitRate@10 `0.995`, MRR `0.791810`,
 > MTTC `2.405`, and TechnicalScore `0.906943`. See E28, T36, T37, T38 and T39.
 >
 > Two lines were developed in parallel and merged twice, on 2026-08-30.
@@ -145,6 +154,9 @@
 | E29 | Slot-projected semantic query | Build the dense index's query from active slotted ledger entries instead of the raw term bag | 197 | E28 | 0.995 | +0.000 | 0.791976 | 2.405 | 0.8595 | 0.906993 | +0.000050 | Reject; 2.7% of a 0.001871 budget | Not committed |
 | E30 | Hard/soft constraint separation | Require only constraints the customer phrased as requirements, detected from the evaluator's wording | 197 | E28 | 0.995 | +0.000 | 0.784006 | 2.405 | 0.8595 | 0.904602 | -0.002341 | Reject; loosens a bonus whose value is strictness | Not committed |
 | E30-A | Separate hard-constraint bonus | Keep `required_terms` and add a second completeness test over the hard subset | 197 | E28 | 0.995 | +0.000 | 0.791810 | 2.405 | 0.8595 | 0.906943 | +0.000000 | Reject; satisfied by 0.1 candidates of 100 | Not committed |
+| E31 | Route-conditional weights | Per-route semantic/popularity weights keyed by `_classify_route`; the first live consumer of the route since E22 | 204 | E28 | 0.990 | -0.005 | 0.782216 | 2.445 | 0.8555 | 0.900765 | -0.005428 | Reject (validation gain reverses on the full set) | `experiment/route-conditional-weights` |
+| E32 | Category field weight | `FIELD_WEIGHTS["categories"]` 3.0 -> 6.0; the first field-weight sweep in the project; gain grows under coverage stress | 205 | E28 | **0.995** | +0.000 | **0.823353** | **2.355** | **0.8645** | **0.917406** | **+0.011213** | **Current best** | `experiment/ngram-phrase-bonus` |
+| E32-A | N-gram phrase bonus | Extend E19 bigrams to runs of 3+, phrase credit scaled by run length | 205 | E28 | 0.995 | +0.000 | 0.797464 | 2.405 | 0.8595 | 0.908639 | +0.002446 | Reject (negative in combination with E32) | Same branch, `phrase_max_n` |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -189,6 +201,7 @@
 | E24-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
 | E26 Implicit-rejection reranking | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
 | E28 Merged line | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
+| E32 Category field weight | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.

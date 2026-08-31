@@ -6,9 +6,16 @@ from collections.abc import Mapping, Sequence
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+# E32: `categories` raised 3.0 -> 6.0, the only field weight ever swept. It
+# outranks `title` because it is the one field with a guaranteed verbatim
+# overlap with the customer: the simulator builds the opening message from
+# `coarse_category(target.categories)`, so the category words in the query are
+# quoted from the target's own category path, while title words are only ever
+# incidental. Swept 3.0-10.0; the gain plateaus across 4.5-6.0 and decays
+# beyond it. See reports/experiments/field-weight-sweep.md.
 FIELD_WEIGHTS = {
     "title": 4.0,
-    "categories": 3.0,
+    "categories": 6.0,
     "features": 2.0,
     "details": 2.0,
     "store": 1.5,
@@ -47,13 +54,48 @@ def extract_bigrams(text: str) -> list[str]:
     return [f"{a} {b}" for a, b in zip(tokens, tokens[1:])]
 
 
+def extract_phrases(text: str, max_n: int = 2) -> list[str]:
+    """Every contiguous word run of length 2..max_n, lowercased.
+
+    E19 rewarded bigrams. The simulator builds a customer's constraint from
+    the target's own `features`/`details` text, so a disclosed constraint is
+    close to a verbatim span of the target listing -- which means the longer
+    the run that still matches, the more discriminating it is. `max_n=2`
+    reproduces `extract_bigrams` exactly, so it is the no-op default.
+
+    Args:
+        text: One utterance. Phrases are never accumulated across turns.
+        max_n: Longest run to emit. Values below 2 yield no phrases.
+
+    Returns:
+        Phrases ordered short to long, duplicates preserved so a repeated
+        run counts each time it was said.
+    """
+    tokens = TOKEN_RE.findall(text.lower())
+    phrases: list[str] = []
+    for size in range(2, max_n + 1):
+        phrases.extend(
+            " ".join(tokens[index:index + size])
+            for index in range(len(tokens) - size + 1)
+        )
+    return phrases
+
+
 def _combined_field_text(candidate: Mapping[str, object]) -> str:
     return " ".join(str(candidate.get(field, "")) for field in FIELD_WEIGHTS).lower()
 
 
-def _phrase_match_count(phrase_terms: Sequence[str], candidate: Mapping[str, object]) -> int:
+def _phrase_match_count(phrase_terms: Sequence[str], candidate: Mapping[str, object]) -> float:
+    """Total phrase credit, weighting each match by how long the phrase is.
+
+    A matching 5-word run is worth four times a matching 2-word run: a longer
+    literal span is far less likely to co-occur by chance. With bigrams only,
+    every match scores 1.0, which is exactly E19's behaviour.
+    """
     combined = _combined_field_text(candidate)
-    return sum(1 for phrase in phrase_terms if phrase in combined)
+    return sum(
+        len(phrase.split()) - 1 for phrase in phrase_terms if phrase in combined
+    )
 
 
 def _best_weight_by_term(query_terms: Sequence[str], candidate: Mapping[str, object]) -> dict[str, float]:
