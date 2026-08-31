@@ -156,6 +156,12 @@ starter/agent.py                  editable weak starter
 evaluator/local_evaluator.py      public-set simulator and scorer
 ```
 
+## Project Report
+
+The required short report — architecture, models, cost, feasibility figures,
+results, limitations, and team contributions — is
+[`docs/REPORT.md`](docs/REPORT.md).
+
 ## Judging and Submission Policy
 
 - Participant submission requirements: `docs/submission_rules.md`
