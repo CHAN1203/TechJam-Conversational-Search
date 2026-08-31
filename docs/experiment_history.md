@@ -2185,3 +2185,5 @@ tests` reports.
 - [Query stress and hybrid retrieval](../reports/experiments/query-stress-and-hybrid-retrieval.md)
 - [Route-conditional weights](../reports/experiments/route-conditional-weights.md)
 - [Test gap audit](test_gap_audit.md)
+- [Staging merge log](staging-merge-2026-08-31.md)
+- [Merge to main](merge-to-main-2026-08-31.md)
