@@ -8,7 +8,16 @@
   2. What changed in each experiment?
   3. Which method is best, and why was each method kept or rejected?
 
-> Current best: the merged line, at public HitRate@10 `0.995`, MRR `0.791810`,
+> Current best: E32 Category field weight, at public HitRate@10 `0.995`, MRR
+> `0.823353`, MTTC `2.355`, and TechnicalScore `0.917406`. It corrects a
+> reliability ordering rather than adding a signal: the simulator quotes the
+> target's category path into the opening message, so `categories` is the one
+> field guaranteed to overlap the query, yet it had been weighted below
+> `title` since E1. Unlike E21, its gain **grows** under the coverage-stress
+> diagnostic (`+0.011213` official, `+0.021101` stressed) and recovers three
+> stressed sessions of HitRate@10. See E32.
+>
+> Previous best: the merged line, at public HitRate@10 `0.995`, MRR `0.791810`,
 > MTTC `2.405`, and TechnicalScore `0.906943`. See E28, T36, T37, T38 and T39.
 >
 > Two lines were developed in parallel and merged twice, on 2026-08-30.
@@ -145,6 +154,10 @@
 | E29 | Slot-projected semantic query | Build the dense index's query from active slotted ledger entries instead of the raw term bag | 197 | E28 | 0.995 | +0.000 | 0.791976 | 2.405 | 0.8595 | 0.906993 | +0.000050 | Reject; 2.7% of a 0.001871 budget | Not committed |
 | E30 | Hard/soft constraint separation | Require only constraints the customer phrased as requirements, detected from the evaluator's wording | 197 | E28 | 0.995 | +0.000 | 0.784006 | 2.405 | 0.8595 | 0.904602 | -0.002341 | Reject; loosens a bonus whose value is strictness | Not committed |
 | E30-A | Separate hard-constraint bonus | Keep `required_terms` and add a second completeness test over the hard subset | 197 | E28 | 0.995 | +0.000 | 0.791810 | 2.405 | 0.8595 | 0.906943 | +0.000000 | Reject; satisfied by 0.1 candidates of 100 | Not committed |
+| E31 | Route-conditional weights | Per-route semantic/popularity weights keyed by `_classify_route`; the first live consumer of the route since E22 | 204 | E28 | 0.990 | -0.005 | 0.782216 | 2.445 | 0.8555 | 0.900765 | -0.005428 | Reject (validation gain reverses on the full set) | `experiment/route-conditional-weights` |
+| E32 | Category field weight | `FIELD_WEIGHTS["categories"]` 3.0 -> 6.0; the first field-weight sweep in the project; gain grows under coverage stress | 205 | E28 | **0.995** | +0.000 | **0.823353** | **2.355** | **0.8645** | **0.917406** | **+0.011213** | **Current best** | `experiment/ngram-phrase-bonus` |
+| E32-A | N-gram phrase bonus | Extend E19 bigrams to runs of 3+, phrase credit scaled by run length | 205 | E28 | 0.995 | +0.000 | 0.797464 | 2.405 | 0.8595 | 0.908639 | +0.002446 | Reject (negative in combination with E32) | Same branch, `phrase_max_n` |
+| E33 | Union-hybrid retrieval | Append dense hits after the BM25 pool instead of E17's fuse-and-truncate; plus a query-side paraphrase stress diagnostic | 214 | E32 | 0.995 | +0.000 | 0.800665 | 2.245 | 0.8755 | 0.912799 | -0.004607 | Reject (costs 0.004607, buys 0.001840 under the worst stress) | `experiment/ngram-phrase-bonus` |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -189,6 +202,7 @@
 | E24-C Information-gain probe | 0.9500 | **1.0000** | **1.000000** | **1.0000** |
 | E26 Implicit-rejection reranking | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
 | E28 Merged line | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
+| E32 Category field weight | **0.9875** | **1.0000** | **1.000000** | **1.0000** |
 
   This table cannot prove private-set performance. It identifies which scenario
   regressed so that an aggregate improvement does not hide a worse user experience.
@@ -2001,7 +2015,149 @@ tests` reports.
   - Public-set improvement does not guarantee private-set improvement. Keep failed
     experiments and ablation evidence.
 
-  ## 8. Evidence sources
+### T42: Routing, then the first field-weight sweep (one kept)
+
+- Date: 2026-08-31
+- Context: after E28 the score is `0.906193` and HitRate@10 is `0.995` -- one
+  miss in 200 sessions. That caps coverage work at `+0.0025`, leaving MRR
+  (`+0.063` available) and MTTC (`+0.028`) as the only headroom. Both are rank
+  quality, so all three experiments below target ranking, not retrieval.
+- **E31, route-conditional weights.** E22 set `COMPLETENESS_ALL_ROUTES = True`,
+  which short-circuits the only reader of `_classify_route`; the route has been
+  computed and unread since. Gave it a job: per-route semantic and popularity
+  weights, aimed at Browsing, whose MRR (`0.735417`) was the largest remaining
+  pool of loss.
+- Diagnostic first: the classifier is **152/160 = `0.950`** accurate on
+  Buying/Browsing, measured against the public set's own labels. Its errors are
+  structural, not noise -- Buying constraints carrying no gazetteer term
+  (`"A key requirement is: Imported."`), and Browsing category names containing
+  slot words (`"Bras Sports Bras"`). The classifier was not the weak part.
+- Result: the validation winner (`browsing popularity 0.6`, `+0.000750`)
+  **reversed** on the full set to `-0.005428`, losing a session of HitRate. It
+  raised Browsing MRR to `0.747445` exactly as intended and still lost overall.
+  Rejected. `buying semantic 0.0` survived at `+0.000286`, below margins this
+  project has rejected before (E6, E23).
+- Mechanism: routing cannot buy coverage at `0.995`, and splitting weights
+  already tuned across E11-E28 halves the evidence behind each without adding a
+  signal the reranker lacked. E13 worked because completeness *added
+  information*; re-weighting information already present does not. The honest
+  reading of E13 -> E22 -> E31 is that Buying/Browsing routing has not paid
+  since E22 removed its last live consumer.
+- **E32, category field weight (kept, new best).** `FIELD_WEIGHTS` had never
+  been swept. Its values come from E1's information-hierarchy reasoning and
+  survived twenty-eight experiments untouched, while every other weight in the
+  system was swept or triangulated.
+- The ordering was backwards. `initial_message` composes the customer's opening
+  line from `coarse_category(target.categories)`, so the category words in the
+  query are **quoted verbatim from the target's own category path**, while
+  title words are only ever incidental -- a target's title may share no term
+  with anything the customer says. `categories` was `3.0` against `title`'s
+  `4.0`. Raised to `6.0`.
+- Result: `0.906193 -> 0.917406`, `+0.011213`, the largest gain since E19.
+  Browsing MRR `0.735417 -> 0.787827`, Buying `0.810774 -> 0.840000`, no
+  scenario losing a session. Boundary MRR regresses `1.000000 -> 0.911111`, one
+  session of ten off rank 1.
+- The asymmetry is the evidence, not the size: raising `title` instead is
+  sharply negative (`-0.067204` at `6.0`), which is what the mechanism predicts
+  and not what generic weight sensitivity would look like. Swept `2.0-10.0`;
+  the gain plateaus across `4.5-6.0` and decays beyond `7.0`. Validation and
+  full set agree on `6.0` -- every validation winner held this time, which is
+  why E31 was run first and is worth reading alongside.
+- **Transfer evidence, the strongest any retained layer carries.** Under the
+  T25 coverage-stress catalog the gain *grows* to `+0.021101` and recovers
+  three stressed sessions of HitRate@10 (`0.980 -> 0.995`). E21 is the
+  counter-example: its `+0.012194` official gain becomes `-0.020274` there.
+  The stress catalog masks `title`, `features`, `description`, `price` and
+  `details` to catalog-wide rates but leaves `categories` at `1.00000`, so
+  stripping the fields the customer only incidentally overlaps makes the one
+  field they are guaranteed to quote carry more of the signal.
+- **E32-A, n-gram phrase bonus (rejected).** E19's bigram bonus was the largest
+  gain since E13, and the simulator derives constraints from the target's own
+  `features`/`details` text, so longer verbatim runs should discriminate
+  better. `extract_phrases(text, max_n)` generalises `extract_bigrams` to runs
+  of `2..max_n` with credit scaled by run length; `max_n=2` reproduces E19
+  byte for byte.
+- Result: `+0.002446` standalone but `0.916631` in combination against E32's
+  `0.917406` -- negative once the category weight is in. Identical from `n=3`
+  upward, because customer utterances rarely contain a matching run longer than
+  three words. Once category matching dominates, the extra phrase credit
+  re-orders candidates the category weight had already separated correctly.
+  Retained at the no-op default `PHRASE_MAX_N = 2` with its tests, so the
+  measurement is reproducible and the parameter is one edit away.
+- What E32 says about the other twenty-eight: every prior ranking experiment
+  added a **new signal** -- popularity, price, semantic similarity, phrase
+  adjacency, constraint completeness. This one adds nothing. It corrects a
+  mis-stated reliability ordering among signals already present, which is a
+  class of improvement the project had never looked for.
+- Still unswept: `store` (`1.5`), and every weight jointly rather than one axis
+  at a time around the E28 point.
+- Commands:
+
+    ```powershell
+    python -m unittest discover -s tests          # 205 tests
+    python -m evaluator.local_evaluator           # TechnicalScore 0.917406
+    python -m scripts.build_coverage_stress_catalog
+    python -m scripts.run_dual_catalog_evaluation
+    ```
+
+- Decision: Keep E32. Reject E31 and E32-A.
+- Commit: `1a7af82` on `experiment/ngram-phrase-bonus`; E31 preserved on
+  `experiment/route-conditional-weights`.
+- Detailed evidence: [field weight sweep](../reports/experiments/field-weight-sweep.md).
+
+
+  ### T43: Is BM25-only a private-set risk? (union rejected, diagnostic kept)
+
+- Date: 2026-08-31
+- Question raised before submission: everything retained was selected on a
+  public set whose customers speak in a handful of fixed sentence frames. If
+  private sessions are vaguer, a system tuned on literal overlap could fail
+  where a semantic retriever would not -- in which case it is worth giving up
+  public score for a hybrid.
+- First correction: **the system is already hybrid at the ranking stage.**
+  `SEMANTIC_WEIGHT = 1.0` since E18, so every candidate's score already carries
+  a dense cosine term. Only *retrieval* is BM25-only, which scopes the exposure
+  exactly: if BM25 never pools the target, no reranking can recover it.
+- Built the missing diagnostic. T25 stresses the catalog; nothing stressed the
+  customer. `analysis/query_stress.py` rewrites the message in flight while the
+  unmodified evaluator drives the session.
+- **The dependency is real and it is the category phrase.** Removing the
+  simulator's sentence frames costs `0.001129`; swapping head nouns for
+  synonyms costs `0.025636`; replacing the quoted taxonomy with "something"
+  costs `0.150384` and 31 sessions of HitRate@10 (`0.995 -> 0.840`).
+- **Hybrid does not fix it.** `retrieval_mode="union"` appends dense hits after
+  the BM25 pool rather than E17's fuse-then-truncate, so BM25 recall cannot be
+  displaced. It costs `0.004607` clean and buys `+0.001840` at the severe level
+  -- one session -- while being net negative at the realistic one. Dense alone
+  is catastrophic at every level (`0.399` at L2).
+- Mechanism: `starter/dense.py` is TF-IDF + SVD, i.e. Latent Semantic Analysis
+  over the same catalog text. It models term co-occurrence, so it is still
+  lexical. When the query loses its informative content, LSA is no better off
+  than BM25 -- the two degrade **together**, not complementarily. A pretrained
+  sentence encoder might not, but network access may be disabled at scoring and
+  downloaded weights are out of scope, so the alternative that would justify
+  the trade cannot ship.
+- **E32 is not the fragile bet it appears to be.** Its gain persists under
+  synonym rewording (`+0.010585` against `+0.011213` clean) and is neutral when
+  the category is removed entirely (`+0.000429`). It exploits a dependency the
+  system already had rather than deepening it.
+- How much the L2 number should worry us: less than its size suggests. The
+  private set is scored by the same `evaluator/local_evaluator.py`, whose
+  `initial_message` always emits `coarse_category(target.categories)`. L2
+  requires replacing the simulator, not paraphrasing it. The realistic downside
+  is the `0.026` of L3, and no available retrieval change reduces it.
+- Decision: **submit `retrieval_mode="bm25"`.** Retain the diagnostic and the
+  `union` mode as non-default, so the comparison is rerunnable.
+- Commands:
+
+    ```powershell
+    python -m unittest discover -s tests
+    python -m scripts.run_query_stress
+    ```
+
+- Detailed evidence: [query stress and hybrid retrieval](../reports/experiments/query-stress-and-hybrid-retrieval.md).
+
+## 8. Evidence sources
 
 - [Official baseline JSON](baseline_results.json)
 - [Evaluation configuration](evaluation_config.json)
@@ -2024,3 +2180,6 @@ tests` reports.
 - [Implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md)
 - [Merged-system ablation](../reports/experiments/merged-system-ablation.md)
 - [Query representation](../reports/experiments/query-representation.md)
+
+- [Field weight sweep](../reports/experiments/field-weight-sweep.md)
+- [Query stress and hybrid retrieval](../reports/experiments/query-stress-and-hybrid-retrieval.md)

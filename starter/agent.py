@@ -9,7 +9,7 @@ from pathlib import Path
 from starter.clarification import DEFAULT_ATTRIBUTE_ORDER, select_attribute
 from starter.ledger import ANSWERED, VOLUNTEERED, ConstraintLedger, assign_slots
 from starter.slots import extract_slots
-from starter.reranker import extract_bigrams, rerank_candidates
+from starter.reranker import extract_phrases, rerank_candidates
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
@@ -57,6 +57,15 @@ SEMANTIC_WEIGHT = 1.0
 # reports/experiments/phrase-bonus.md. 1.0 was the peak: TechnicalScore
 # 0.849882 -> 0.868476, 2 sessions recovered, 0 lost.
 PHRASE_WEIGHT = 1.0
+# E31: longest contiguous word run rewarded as a literal substring. The
+# simulator derives a customer's constraint from the target's own
+# features/details text, so a disclosed constraint is close to a verbatim span
+# of the target listing. 2 is E19's bigram behaviour exactly.
+PHRASE_MAX_N = 2
+# E33: how many dense hits to append after the BM25 pool in retrieval_mode
+# "union". These are additions, never replacements, so this trades reranker
+# work for reach rather than displacing BM25 recall.
+DENSE_UNION_SIZE = 100
 ATTRIBUTE_QUESTIONS = {
     "material": "Do you have a material preference?",
     "size": "Do you have any sizing or fit requirements?",
@@ -171,8 +180,10 @@ class Agent:
         price_weight: float = PRICE_WEIGHT,
         rating_weight: float = RATING_WEIGHT,
         retrieval_mode: str = "bm25",
+        dense_union_size: int = DENSE_UNION_SIZE,
         semantic_weight: float = SEMANTIC_WEIGHT,
         phrase_weight: float = PHRASE_WEIGHT,
+        phrase_max_n: int = PHRASE_MAX_N,
         completeness_bonus: float = COMPLETENESS_BONUS,
         completeness_all_routes: bool = COMPLETENESS_ALL_ROUTES,
         recency_weight: float = RECENCY_WEIGHT,
@@ -183,6 +194,7 @@ class Agent:
         self.completeness_all_routes = completeness_all_routes
         self.recency_weight = recency_weight
         self.phrase_weight = phrase_weight
+        self.phrase_max_n = phrase_max_n
         self.catalog_path = Path(catalog_path)
         self.clarification_policy = clarification_policy
         self.state_model = state_model
@@ -191,6 +203,7 @@ class Agent:
         self.price_weight = price_weight
         self.rating_weight = rating_weight
         self.retrieval_mode = retrieval_mode
+        self.dense_union_size = dense_union_size
         self.semantic_weight = semantic_weight
         self.gazetteer = _load_gazetteer(gazetteer_path)
         self.connection = sqlite3.connect(":memory:")
@@ -207,7 +220,7 @@ class Agent:
     def _build_index(self) -> None:
         # Needed either as a retrieval route (E16/E17) or purely to score
         # candidates that BM25 already retrieved (semantic reranking).
-        self._needs_dense_index = self.retrieval_mode in ("dense", "rrf") or self.semantic_weight != 0.0
+        self._needs_dense_index = self.retrieval_mode in ("dense", "union") or self.semantic_weight != 0.0
         cursor = self.connection.cursor()
         cursor.execute(
             "CREATE VIRTUAL TABLE products USING fts5("
@@ -402,6 +415,42 @@ class Agent:
             and self._session_no_gain.get(session_id, 0) >= self.no_gain_probe
         )
 
+    def _bm25_candidates(self, expression: str, top_k: int) -> list[dict]:
+        """Retrieve the BM25 candidate pool for one query expression.
+
+        Args:
+            expression: FTS5 MATCH expression, or empty for no query terms.
+            top_k: Requested result count; the pool is at least
+                `CANDIDATE_POOL_SIZE` so the reranker has room to work.
+
+        Returns:
+            Candidate dicts carrying the scored fields plus the priors the
+            reranker reads. Empty when there is nothing to match on.
+        """
+        if not expression:
+            return []
+        rows = self.connection.execute(
+            "SELECT parent_asin, title, categories, features, details, store, description "
+            "FROM products WHERE products MATCH ? "
+            "ORDER BY bm25(products, 0.0, 6.0, 4.0, 2.5, 2.5, 1.5, 1.0) LIMIT ?",
+            (expression, max(top_k, CANDIDATE_POOL_SIZE)),
+        ).fetchall()
+        return [
+            {
+                "parent_asin": row[0],
+                "title": row[1],
+                "categories": row[2],
+                "features": row[3],
+                "details": row[4],
+                "store": row[5],
+                "description": row[6],
+                "rating_number": self._popularity.get(row[0], 0.0),
+                "has_price": self._has_price.get(row[0], False),
+                "average_rating": self._average_rating.get(row[0], 0.0),
+            }
+            for row in rows
+        ]
+
     def respond(
         self,
         session_id: str,
@@ -464,37 +513,38 @@ class Agent:
             required_terms = slot_terms & set(unique_terms)
         expression = " OR ".join(f'"{term}"' for term in unique_terms)
         query_text = " ".join(unique_terms)
-        if self.retrieval_mode == "dense":
+        if self.retrieval_mode == "union":
+            # E33. E17 fused BM25 and dense by Reciprocal Rank Fusion and then
+            # truncated to 100, which evicted correct-but-mediocre-BM25-rank
+            # candidates to make room for products whose only merit was also
+            # appearing in dense's noisier list -- that truncation, not dense
+            # itself, is what the E17 report traced the regression to.
+            #
+            # Union appends dense's hits *after* BM25's full pool instead of
+            # competing for its slots, so BM25 recall is preserved by
+            # construction and dense can only add reach. The reranker, not the
+            # fusion rule, decides what wins.
+            candidates = self._bm25_candidates(expression, top_k)
+            seen = {str(candidate["parent_asin"]) for candidate in candidates}
+            dense_hits = (
+                self.dense_index.search(query_text, self.dense_union_size)
+                if self.dense_index
+                else []
+            )
+            candidates.extend(
+                self._products[asin]
+                for asin in dense_hits
+                if asin not in seen and asin in self._products
+            )
+        elif self.retrieval_mode == "dense":
             # Isolated comparison only: replaces BM25 candidates entirely so
             # dense retrieval's own recall can be measured on its own,
             # before any fusion with BM25 (see reports/experiments/dense-retrieval.md).
             pool_size = max(top_k, CANDIDATE_POOL_SIZE)
             dense_hits = self.dense_index.search(query_text, pool_size) if self.dense_index else []
             candidates = [self._products[asin] for asin in dense_hits if asin in self._products]
-        elif not expression:
-            candidates = []
         else:
-            rows = self.connection.execute(
-                "SELECT parent_asin, title, categories, features, details, store, description "
-                "FROM products WHERE products MATCH ? "
-                "ORDER BY bm25(products, 0.0, 6.0, 4.0, 2.5, 2.5, 1.5, 1.0) LIMIT ?",
-                (expression, max(top_k, CANDIDATE_POOL_SIZE)),
-            ).fetchall()
-            candidates = [
-                {
-                    "parent_asin": row[0],
-                    "title": row[1],
-                    "categories": row[2],
-                    "features": row[3],
-                    "details": row[4],
-                    "store": row[5],
-                    "description": row[6],
-                    "rating_number": self._popularity.get(row[0], 0.0),
-                    "has_price": self._has_price.get(row[0], False),
-                    "average_rating": self._average_rating.get(row[0], 0.0),
-                }
-                for row in rows
-            ]
+            candidates = self._bm25_candidates(expression, top_k)
         if not candidates:
             recommendations: list[dict] = []
         else:
@@ -520,7 +570,7 @@ class Agent:
                     completeness_bonus=self.completeness_bonus,
                     semantic_scores=semantic_scores,
                     semantic_weight=self.semantic_weight,
-                    phrase_terms=extract_bigrams(user_message),
+                    phrase_terms=extract_phrases(user_message, self.phrase_max_n),
                     phrase_weight=self.phrase_weight,
                     term_weights=term_weights,
                 )
