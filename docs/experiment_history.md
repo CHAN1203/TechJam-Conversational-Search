@@ -157,6 +157,7 @@
 | E31 | Route-conditional weights | Per-route semantic/popularity weights keyed by `_classify_route`; the first live consumer of the route since E22 | 204 | E28 | 0.990 | -0.005 | 0.782216 | 2.445 | 0.8555 | 0.900765 | -0.005428 | Reject (validation gain reverses on the full set) | `experiment/route-conditional-weights` |
 | E32 | Category field weight | `FIELD_WEIGHTS["categories"]` 3.0 -> 6.0; the first field-weight sweep in the project; gain grows under coverage stress | 205 | E28 | **0.995** | +0.000 | **0.823353** | **2.355** | **0.8645** | **0.917406** | **+0.011213** | **Current best** | `experiment/ngram-phrase-bonus` |
 | E32-A | N-gram phrase bonus | Extend E19 bigrams to runs of 3+, phrase credit scaled by run length | 205 | E28 | 0.995 | +0.000 | 0.797464 | 2.405 | 0.8595 | 0.908639 | +0.002446 | Reject (negative in combination with E32) | Same branch, `phrase_max_n` |
+| E33 | Union-hybrid retrieval | Append dense hits after the BM25 pool instead of E17's fuse-and-truncate; plus a query-side paraphrase stress diagnostic | 214 | E32 | 0.995 | +0.000 | 0.800665 | 2.245 | 0.8755 | 0.912799 | -0.004607 | Reject (costs 0.004607, buys 0.001840 under the worst stress) | `experiment/ngram-phrase-bonus` |
 
   The E1-A targeted test completed a red-green cycle. The behavior was then
   removed because the evaluator regressed, so it is not in the final test suite
@@ -2105,7 +2106,58 @@ tests` reports.
 - Detailed evidence: [field weight sweep](../reports/experiments/field-weight-sweep.md).
 
 
-  ## 8. Evidence sources
+  ### T43: Is BM25-only a private-set risk? (union rejected, diagnostic kept)
+
+- Date: 2026-08-31
+- Question raised before submission: everything retained was selected on a
+  public set whose customers speak in a handful of fixed sentence frames. If
+  private sessions are vaguer, a system tuned on literal overlap could fail
+  where a semantic retriever would not -- in which case it is worth giving up
+  public score for a hybrid.
+- First correction: **the system is already hybrid at the ranking stage.**
+  `SEMANTIC_WEIGHT = 1.0` since E18, so every candidate's score already carries
+  a dense cosine term. Only *retrieval* is BM25-only, which scopes the exposure
+  exactly: if BM25 never pools the target, no reranking can recover it.
+- Built the missing diagnostic. T25 stresses the catalog; nothing stressed the
+  customer. `analysis/query_stress.py` rewrites the message in flight while the
+  unmodified evaluator drives the session.
+- **The dependency is real and it is the category phrase.** Removing the
+  simulator's sentence frames costs `0.001129`; swapping head nouns for
+  synonyms costs `0.025636`; replacing the quoted taxonomy with "something"
+  costs `0.150384` and 31 sessions of HitRate@10 (`0.995 -> 0.840`).
+- **Hybrid does not fix it.** `retrieval_mode="union"` appends dense hits after
+  the BM25 pool rather than E17's fuse-then-truncate, so BM25 recall cannot be
+  displaced. It costs `0.004607` clean and buys `+0.001840` at the severe level
+  -- one session -- while being net negative at the realistic one. Dense alone
+  is catastrophic at every level (`0.399` at L2).
+- Mechanism: `starter/dense.py` is TF-IDF + SVD, i.e. Latent Semantic Analysis
+  over the same catalog text. It models term co-occurrence, so it is still
+  lexical. When the query loses its informative content, LSA is no better off
+  than BM25 -- the two degrade **together**, not complementarily. A pretrained
+  sentence encoder might not, but network access may be disabled at scoring and
+  downloaded weights are out of scope, so the alternative that would justify
+  the trade cannot ship.
+- **E32 is not the fragile bet it appears to be.** Its gain persists under
+  synonym rewording (`+0.010585` against `+0.011213` clean) and is neutral when
+  the category is removed entirely (`+0.000429`). It exploits a dependency the
+  system already had rather than deepening it.
+- How much the L2 number should worry us: less than its size suggests. The
+  private set is scored by the same `evaluator/local_evaluator.py`, whose
+  `initial_message` always emits `coarse_category(target.categories)`. L2
+  requires replacing the simulator, not paraphrasing it. The realistic downside
+  is the `0.026` of L3, and no available retrieval change reduces it.
+- Decision: **submit `retrieval_mode="bm25"`.** Retain the diagnostic and the
+  `union` mode as non-default, so the comparison is rerunnable.
+- Commands:
+
+    ```powershell
+    python -m unittest discover -s tests
+    python -m scripts.run_query_stress
+    ```
+
+- Detailed evidence: [query stress and hybrid retrieval](../reports/experiments/query-stress-and-hybrid-retrieval.md).
+
+## 8. Evidence sources
 
 - [Official baseline JSON](baseline_results.json)
 - [Evaluation configuration](evaluation_config.json)
@@ -2130,3 +2182,4 @@ tests` reports.
 - [Query representation](../reports/experiments/query-representation.md)
 
 - [Field weight sweep](../reports/experiments/field-weight-sweep.md)
+- [Query stress and hybrid retrieval](../reports/experiments/query-stress-and-hybrid-retrieval.md)
