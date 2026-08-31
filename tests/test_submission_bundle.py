@@ -43,11 +43,14 @@ SUBMISSION_PATHS = (
     "starter/__init__.py",
     "starter/agent.py",
     "starter/clarification.py",
+    "starter/dense.py",
+    "starter/ledger.py",
     "starter/reranker.py",
     "starter/slots.py",
     "analysis/__init__.py",
     "analysis/gazetteer.py",
     "data/gazetteer.json",
+    "requirements.txt",
 )
 
 # Modules the bundle must never need. Shipping them, or importing them from the
@@ -296,23 +299,60 @@ class SubmissionBundleTest(unittest.TestCase):
         self.assertTrue((self.bundle / "data" / "gazetteer.json").is_file())
         self.assertEqual(EXPECTED_GAZETTEER_SLOTS, set(self.report["gazetteer_slots"]))
 
-    def test_bundle_carries_no_python_dependencies_beyond_the_standard_library(self) -> None:
-        """The agent must run offline with no third-party install.
+    def test_every_third_party_import_is_declared_in_requirements(self) -> None:
+        """The bundle may use third-party packages, but only declared ones.
 
-        `docs/submission_rules.md` requires the submission to state whether it
-        needs network access. Pinning the import surface keeps that claim true.
+        E18 made semantic reranking a default, so `starter/dense.py` imports
+        numpy and scikit-learn and the agent is no longer standard-library
+        only. `docs/submission_rules.md` requires a dependency manifest, so the
+        contract this pins is "declared", not "absent".
         """
-        third_party = {
-            "numpy", "scipy", "pandas", "sklearn", "torch", "transformers",
-            "openai", "anthropic", "requests", "httpx", "faiss",
+        declared = (REPOSITORY_ROOT / "requirements.txt").read_text(encoding="utf-8")
+        known_third_party = {
+            "numpy": "numpy",
+            "sklearn": "scikit-learn",
+            "scipy": "scipy",
+            "pandas": "pandas",
+            "torch": "torch",
+            "transformers": "transformers",
+            "openai": "openai",
+            "anthropic": "anthropic",
+            "requests": "requests",
+            "httpx": "httpx",
+            "faiss": "faiss",
         }
         for relative in SUBMISSION_PATHS:
             if not relative.endswith(".py"):
                 continue
             source = (REPOSITORY_ROOT / relative).read_text(encoding="utf-8")
-            for package in third_party:
-                with self.subTest(path=relative, package=package):
-                    self.assertNotIn(f"import {package}", source)
+            for module, distribution in known_third_party.items():
+                imported = (
+                    f"import {module}" in source or f"from {module}" in source
+                )
+                if not imported:
+                    continue
+                with self.subTest(path=relative, package=module):
+                    self.assertIn(
+                        distribution,
+                        declared,
+                        msg=f"{relative} imports {module}; add {distribution} to requirements.txt",
+                    )
+
+    def test_the_agent_makes_no_network_calls(self) -> None:
+        """`docs/submission_rules.md` requires stating whether network is needed.
+
+        The answer is no, and this keeps it true: scoring may run with network
+        access disabled, so an accidental client import would be fatal there
+        rather than merely slow.
+        """
+        networking = ("socket", "urllib", "requests", "httpx", "aiohttp")
+        for relative in SUBMISSION_PATHS:
+            if not relative.endswith(".py"):
+                continue
+            source = (REPOSITORY_ROOT / relative).read_text(encoding="utf-8")
+            for module in networking:
+                with self.subTest(path=relative, package=module):
+                    self.assertNotIn(f"import {module}", source)
 
 
 if __name__ == "__main__":

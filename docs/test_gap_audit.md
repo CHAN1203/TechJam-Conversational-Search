@@ -3,6 +3,10 @@
 Date: 2026-08-29. Audited commit: `0e63695`. Suite at audit time: 67 tests, all
 passing.
 
+> **Merged into `staging` on 2026-08-31 at E32.** The gaps and the argument
+> stand; the specific figures below are the ones measured at audit time against
+> E11 (`0.841838`). Section 6 records what the merge changed.
+
 This audit asks one question: **which competition requirements can break without
 a test failing?** It covers the scored submission path only. The session viewer
 under `frontend/` is a development tool that is excluded from the submission
@@ -83,14 +87,23 @@ analysis/gazetteer.py
 data/gazetteer.json
 ```
 
+**Superseded at merge time.** E18 made semantic reranking a default and E24-E27
+added the constraint ledger, so the set is now `starter/` (including
+`dense.py` and `ledger.py`), `analysis/__init__.py`, `analysis/gazetteer.py`,
+`data/gazetteer.json` and `requirements.txt`. `tests/test_submission_bundle.py`
+caught exactly this drift on merge -- the declared list was missing
+`starter/ledger.py` and the bundle failed to import in isolation, which is the
+failure mode G2 predicted.
+
 Note that the rest of `analysis/` must **not** ship: `bm25_diagnostics.py` and
 `experiment_results.py` import `evaluator.local_evaluator`, which does not
 belong in a participant bundle. `analysis/__init__.py` holds only a docstring,
 so importing `analysis.gazetteer` does not pull those modules in.
 
-The repository also has no `requirements.txt`, `pyproject.toml`, or packaging
-script. The agent uses only the standard library, so the manifest is trivial,
-but the rules still require it to exist and be stated.
+At audit time the repository had no dependency manifest and the agent used
+only the standard library. Both have since changed: `requirements.txt` now
+declares `scikit-learn` and `numpy`, which `starter/dense.py` needs to build
+the dense index. There is still no packaging script.
 
 ### G3: `data/gazetteer.json` is an undeclared runtime dependency
 
@@ -198,9 +211,9 @@ This test runs in the default suite and needs no catalog download.
   still reaches into `analysis/` for one function. Inlining `normalize_term`
   into `starter/slots.py` would reduce the bundle to `starter/` plus the
   gazetteer. That edits the scored path, so it is left as a separate decision.
-- **Dependency manifest.** A `requirements.txt` stating "standard library only"
-  plus the exact Python version, and a one-command harness instruction, are
-  still required by `docs/submission_rules.md`.
+- **Dependency manifest.** `requirements.txt` now exists. The exact Python
+  version and a one-command harness instruction are still required by
+  `docs/submission_rules.md`.
 - **G7.** Record peak memory and per-turn latency, and confirm the 800-session
   private run fits any stated timeout.
 - **G8.** State the offline guarantee in `README.md` as the rules require.
@@ -216,3 +229,23 @@ python -m unittest tests.test_submission_bundle -v
 $env:TECHJAM_RUN_PUBLIC_SET = "1"; python -m unittest tests.test_public_set_regression -v
 python -m evaluator.local_evaluator
 ```
+
+## 6. What the merge into `staging` changed
+
+Merged on 2026-08-31, on top of E32 (`0.917406`). Both tests survived a
+68-commit gap in their base, and one of them earned its keep immediately.
+
+- **G1 closed and re-pinned.** `docs/current_best_results.json` was regenerated
+  from a real evaluator run at E32: HitRate@10 `0.995`, MRR `0.823353`, MTTC
+  `2.355`, TechnicalScore `0.917406`. The opt-in regression test passes against
+  it.
+- **G2 caught a live defect.** `SUBMISSION_PATHS` still described the E11-era
+  bundle. Running it against current `main` failed with
+  `ModuleNotFoundError: No module named 'starter.ledger'` -- the declared
+  submission bundle would not have imported. Fixed by adding `starter/dense.py`,
+  `starter/ledger.py` and `requirements.txt`.
+- **G8 partially closed.** The stdlib-only assertion was replaced by two tests
+  that match reality: every third-party import in the bundle must be declared in
+  `requirements.txt`, and no networking module may be imported at all. The
+  offline guarantee is now enforced rather than assumed.
+- Suite: 227 tests, all passing; 4 skip without `TECHJAM_RUN_PUBLIC_SET=1`.

@@ -154,7 +154,7 @@
 | E29 | Slot-projected semantic query | Build the dense index's query from active slotted ledger entries instead of the raw term bag | 197 | E28 | 0.995 | +0.000 | 0.791976 | 2.405 | 0.8595 | 0.906993 | +0.000050 | Reject; 2.7% of a 0.001871 budget | Not committed |
 | E30 | Hard/soft constraint separation | Require only constraints the customer phrased as requirements, detected from the evaluator's wording | 197 | E28 | 0.995 | +0.000 | 0.784006 | 2.405 | 0.8595 | 0.904602 | -0.002341 | Reject; loosens a bonus whose value is strictness | Not committed |
 | E30-A | Separate hard-constraint bonus | Keep `required_terms` and add a second completeness test over the hard subset | 197 | E28 | 0.995 | +0.000 | 0.791810 | 2.405 | 0.8595 | 0.906943 | +0.000000 | Reject; satisfied by 0.1 candidates of 100 | Not committed |
-| E31 | Route-conditional weights | Per-route semantic/popularity weights keyed by `_classify_route`; the first live consumer of the route since E22 | 204 | E28 | 0.990 | -0.005 | 0.782216 | 2.445 | 0.8555 | 0.900765 | -0.005428 | Reject (validation gain reverses on the full set) | `experiment/route-conditional-weights` |
+| E31 | Route-conditional weights | Per-route semantic/popularity weights keyed by `_classify_route`; the first live consumer of the route since E22 | 204 | E28 | 0.990 | -0.005 | 0.782216 | 2.445 | 0.8555 | 0.900765 | -0.005428 | Reject (validation gain reverses on the full set) | Report merged; code on `experiment/route-conditional-weights` |
 | E32 | Category field weight | `FIELD_WEIGHTS["categories"]` 3.0 -> 6.0; the first field-weight sweep in the project; gain grows under coverage stress | 205 | E28 | **0.995** | +0.000 | **0.823353** | **2.355** | **0.8645** | **0.917406** | **+0.011213** | **Current best** | `experiment/ngram-phrase-bonus` |
 | E32-A | N-gram phrase bonus | Extend E19 bigrams to runs of 3+, phrase credit scaled by run length | 205 | E28 | 0.995 | +0.000 | 0.797464 | 2.405 | 0.8595 | 0.908639 | +0.002446 | Reject (negative in combination with E32) | Same branch, `phrase_max_n` |
 | E33 | Union-hybrid retrieval | Append dense hits after the BM25 pool instead of E17's fuse-and-truncate; plus a query-side paraphrase stress diagnostic | 214 | E32 | 0.995 | +0.000 | 0.800665 | 2.245 | 0.8755 | 0.912799 | -0.004607 | Reject (costs 0.004607, buys 0.001840 under the worst stress) | `experiment/ngram-phrase-bonus` |
@@ -2183,3 +2183,5 @@ tests` reports.
 
 - [Field weight sweep](../reports/experiments/field-weight-sweep.md)
 - [Query stress and hybrid retrieval](../reports/experiments/query-stress-and-hybrid-retrieval.md)
+- [Route-conditional weights](../reports/experiments/route-conditional-weights.md)
+- [Test gap audit](test_gap_audit.md)
