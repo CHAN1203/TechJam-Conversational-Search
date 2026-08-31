@@ -29,3 +29,8 @@ venv
 node_modules/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+
+# Local working copies of the organizer's problem brief. Not ours to
+# redistribute, and not needed to reproduce any result.
+problem_statement.md
+TechJam.pdf
