@@ -2014,6 +2014,97 @@ tests` reports.
   - Public-set improvement does not guarantee private-set improvement. Keep failed
     experiments and ablation evidence.
 
+### T42: Routing, then the first field-weight sweep (one kept)
+
+- Date: 2026-08-31
+- Context: after E28 the score is `0.906193` and HitRate@10 is `0.995` -- one
+  miss in 200 sessions. That caps coverage work at `+0.0025`, leaving MRR
+  (`+0.063` available) and MTTC (`+0.028`) as the only headroom. Both are rank
+  quality, so all three experiments below target ranking, not retrieval.
+- **E31, route-conditional weights.** E22 set `COMPLETENESS_ALL_ROUTES = True`,
+  which short-circuits the only reader of `_classify_route`; the route has been
+  computed and unread since. Gave it a job: per-route semantic and popularity
+  weights, aimed at Browsing, whose MRR (`0.735417`) was the largest remaining
+  pool of loss.
+- Diagnostic first: the classifier is **152/160 = `0.950`** accurate on
+  Buying/Browsing, measured against the public set's own labels. Its errors are
+  structural, not noise -- Buying constraints carrying no gazetteer term
+  (`"A key requirement is: Imported."`), and Browsing category names containing
+  slot words (`"Bras Sports Bras"`). The classifier was not the weak part.
+- Result: the validation winner (`browsing popularity 0.6`, `+0.000750`)
+  **reversed** on the full set to `-0.005428`, losing a session of HitRate. It
+  raised Browsing MRR to `0.747445` exactly as intended and still lost overall.
+  Rejected. `buying semantic 0.0` survived at `+0.000286`, below margins this
+  project has rejected before (E6, E23).
+- Mechanism: routing cannot buy coverage at `0.995`, and splitting weights
+  already tuned across E11-E28 halves the evidence behind each without adding a
+  signal the reranker lacked. E13 worked because completeness *added
+  information*; re-weighting information already present does not. The honest
+  reading of E13 -> E22 -> E31 is that Buying/Browsing routing has not paid
+  since E22 removed its last live consumer.
+- **E32, category field weight (kept, new best).** `FIELD_WEIGHTS` had never
+  been swept. Its values come from E1's information-hierarchy reasoning and
+  survived twenty-eight experiments untouched, while every other weight in the
+  system was swept or triangulated.
+- The ordering was backwards. `initial_message` composes the customer's opening
+  line from `coarse_category(target.categories)`, so the category words in the
+  query are **quoted verbatim from the target's own category path**, while
+  title words are only ever incidental -- a target's title may share no term
+  with anything the customer says. `categories` was `3.0` against `title`'s
+  `4.0`. Raised to `6.0`.
+- Result: `0.906193 -> 0.917406`, `+0.011213`, the largest gain since E19.
+  Browsing MRR `0.735417 -> 0.787827`, Buying `0.810774 -> 0.840000`, no
+  scenario losing a session. Boundary MRR regresses `1.000000 -> 0.911111`, one
+  session of ten off rank 1.
+- The asymmetry is the evidence, not the size: raising `title` instead is
+  sharply negative (`-0.067204` at `6.0`), which is what the mechanism predicts
+  and not what generic weight sensitivity would look like. Swept `2.0-10.0`;
+  the gain plateaus across `4.5-6.0` and decays beyond `7.0`. Validation and
+  full set agree on `6.0` -- every validation winner held this time, which is
+  why E31 was run first and is worth reading alongside.
+- **Transfer evidence, the strongest any retained layer carries.** Under the
+  T25 coverage-stress catalog the gain *grows* to `+0.021101` and recovers
+  three stressed sessions of HitRate@10 (`0.980 -> 0.995`). E21 is the
+  counter-example: its `+0.012194` official gain becomes `-0.020274` there.
+  The stress catalog masks `title`, `features`, `description`, `price` and
+  `details` to catalog-wide rates but leaves `categories` at `1.00000`, so
+  stripping the fields the customer only incidentally overlaps makes the one
+  field they are guaranteed to quote carry more of the signal.
+- **E32-A, n-gram phrase bonus (rejected).** E19's bigram bonus was the largest
+  gain since E13, and the simulator derives constraints from the target's own
+  `features`/`details` text, so longer verbatim runs should discriminate
+  better. `extract_phrases(text, max_n)` generalises `extract_bigrams` to runs
+  of `2..max_n` with credit scaled by run length; `max_n=2` reproduces E19
+  byte for byte.
+- Result: `+0.002446` standalone but `0.916631` in combination against E32's
+  `0.917406` -- negative once the category weight is in. Identical from `n=3`
+  upward, because customer utterances rarely contain a matching run longer than
+  three words. Once category matching dominates, the extra phrase credit
+  re-orders candidates the category weight had already separated correctly.
+  Retained at the no-op default `PHRASE_MAX_N = 2` with its tests, so the
+  measurement is reproducible and the parameter is one edit away.
+- What E32 says about the other twenty-eight: every prior ranking experiment
+  added a **new signal** -- popularity, price, semantic similarity, phrase
+  adjacency, constraint completeness. This one adds nothing. It corrects a
+  mis-stated reliability ordering among signals already present, which is a
+  class of improvement the project had never looked for.
+- Still unswept: `store` (`1.5`), and every weight jointly rather than one axis
+  at a time around the E28 point.
+- Commands:
+
+    ```powershell
+    python -m unittest discover -s tests          # 205 tests
+    python -m evaluator.local_evaluator           # TechnicalScore 0.917406
+    python -m scripts.build_coverage_stress_catalog
+    python -m scripts.run_dual_catalog_evaluation
+    ```
+
+- Decision: Keep E32. Reject E31 and E32-A.
+- Commit: `1a7af82` on `experiment/ngram-phrase-bonus`; E31 preserved on
+  `experiment/route-conditional-weights`.
+- Detailed evidence: [field weight sweep](../reports/experiments/field-weight-sweep.md).
+
+
   ## 8. Evidence sources
 
 - [Official baseline JSON](baseline_results.json)
@@ -2037,3 +2128,5 @@ tests` reports.
 - [Implicit-rejection reranking](../reports/experiments/implicit-rejection-reranking.md)
 - [Merged-system ablation](../reports/experiments/merged-system-ablation.md)
 - [Query representation](../reports/experiments/query-representation.md)
+
+- [Field weight sweep](../reports/experiments/field-weight-sweep.md)
