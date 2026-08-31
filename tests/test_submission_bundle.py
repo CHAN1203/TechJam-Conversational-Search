@@ -32,6 +32,19 @@ import unittest
 from pathlib import Path
 
 
+SCORE_FLAG = "TECHJAM_RUN_PUBLIC_SET"
+EXPECTED_PATH = Path(__file__).resolve().parent.parent / "docs" / "current_best_results.json"
+CATALOG_PATH = Path(__file__).resolve().parent.parent / "data" / "catalog.jsonl"
+# The organizer supplies these; a participant bundle does not ship them, but
+# they must be present for the bundle to be scored at all.
+ORGANIZER_PATHS = (
+    "evaluator/__init__.py",
+    "evaluator/local_evaluator.py",
+    "data/public_set.jsonl",
+    "data/catalog.jsonl",
+)
+
+
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 
 # Everything the scored agent needs, and nothing else. The rest of `analysis/`
@@ -353,6 +366,71 @@ class SubmissionBundleTest(unittest.TestCase):
             for module in networking:
                 with self.subTest(path=relative, package=module):
                     self.assertNotIn(f"import {module}", source)
+
+
+def _scoring_runnable() -> tuple[bool, str]:
+    """Whether the end-to-end bundle scoring run can execute, and why not."""
+    if os.environ.get(SCORE_FLAG) != "1":
+        return False, f"set {SCORE_FLAG}=1 to score the bundle end to end"
+    if not CATALOG_PATH.exists():
+        return False, f"missing {CATALOG_PATH}; download it from the GitHub Release"
+    return True, ""
+
+
+SCORING_RUNNABLE, SCORING_SKIP_REASON = _scoring_runnable()
+
+
+@unittest.skipUnless(SCORING_RUNNABLE, SCORING_SKIP_REASON)
+class SubmissionBundleScoringTest(unittest.TestCase):
+    """The bundle must reproduce the retained score, not merely import.
+
+    `SubmissionBundleTest` proves the declared files import and honour the
+    contract on a synthetic catalog. That is not the same as scoring: a bundle
+    can import cleanly and still lose points to a missing data asset, which is
+    exactly how a missing gazetteer fails (silently, worth 0.033455). This runs
+    the real evaluator over the real catalog inside the isolated bundle and
+    compares against the committed retained result.
+    """
+
+    def test_the_isolated_bundle_reproduces_the_retained_score(self) -> None:
+        expected = json.loads(EXPECTED_PATH.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "bundle"
+            bundle.mkdir()
+            build_bundle(bundle)
+            for relative in ORGANIZER_PATHS:
+                target = bundle / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPOSITORY_ROOT / relative, target)
+
+            environment = {
+                key: value for key, value in os.environ.items() if key != "PYTHONPATH"
+            }
+            completed = subprocess.run(
+                [sys.executable, "-m", "evaluator.local_evaluator",
+                 "--output", str(bundle / "results.json")],
+                cwd=bundle,
+                env=environment,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                0,
+                completed.returncode,
+                msg="bundle scoring failed:\n" + completed.stderr[-2000:],
+            )
+            actual = json.loads((bundle / "results.json").read_text(encoding="utf-8"))
+
+        self.assertAlmostEqual(
+            expected["technical_score"],
+            actual["recommended_technical_score"],
+            places=6,
+            msg="the submission bundle does not reproduce the retained score",
+        )
+        self.assertAlmostEqual(
+            expected["hit_rate_at_10"], actual["hit_rate_at_10"], places=6
+        )
+        self.assertAlmostEqual(expected["mrr"], actual["mrr"], places=6)
 
 
 if __name__ == "__main__":

@@ -249,3 +249,35 @@ Merged on 2026-08-31, on top of E32 (`0.917406`). Both tests survived a
   `requirements.txt`, and no networking module may be imported at all. The
   offline guarantee is now enforced rather than assumed.
 - Suite: 227 tests, all passing; 4 skip without `TECHJAM_RUN_PUBLIC_SET=1`.
+
+## 7. Second pass, 2026-09-01
+
+Investigated the remaining gaps and the missing figures. What closed:
+
+- **G7 closed.** `scripts/profile_agent.py` measures construction cost,
+  per-turn latency and peak RSS, and writes
+  `reports/experiments/resource-profile.json`. Measured: 25.0 s construction,
+  800.6 MB peak RSS, 94.7 ms mean per-turn latency (p95 174.3 ms), 44.6 s for
+  200 sessions, ~204 s projected for 800. **Memory is the exposure**: 800 MB is
+  the figure most likely to breach an organizer cap.
+- **G8 closed.** `test_the_agent_makes_no_network_calls` asserts no networking
+  module is imported anywhere in the declared bundle, and the README now states
+  the offline guarantee alongside the exact Python version and the
+  one-command harness instruction.
+- **New guard: the bundle must *score*, not merely import.**
+  `SubmissionBundleScoringTest` assembles the declared bundle plus the
+  organizer files, runs the real evaluator inside it with `PYTHONPATH` cleared,
+  and asserts it reproduces `0.917406`. The existing bundle test only proved
+  imports on a synthetic catalog, which cannot detect a missing data asset --
+  precisely how an absent gazetteer fails, silently and for `0.033455`.
+
+What remains open, with the reason:
+
+- **Packaging script.** Still none. The bundle file list is declared in
+  `tests/test_submission_bundle.py` and verified end to end, so a script would
+  now be mechanical.
+- **`starter/slots.py` still imports `analysis.gazetteer`** for one function.
+  Inlining `normalize_term` would drop `analysis/` from the bundle. Deferred
+  because it edits the scored path for a packaging benefit only.
+- **`public_0020`** is unreachable by pool size (tested to 1,000) and is a
+  retrieval-path problem, not a tuning one.

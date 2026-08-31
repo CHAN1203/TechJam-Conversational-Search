@@ -156,6 +156,29 @@ starter/agent.py                  editable weak starter
 evaluator/local_evaluator.py      public-set simulator and scorer
 ```
 
+## Reproduce Our Result
+
+Python **3.10+** required; developed, measured and scored on **3.11.4**.
+
+```bash
+pip install -r requirements.txt
+# catalog.jsonl must be in data/ -- see "Download the Catalog" above
+python -m evaluator.local_evaluator
+```
+
+That single command is the official harness entry point and prints
+`recommended_technical_score` **0.917406**. No environment variables are
+needed and **no network access is required** once the catalog is downloaded.
+
+Optional checks:
+
+```bash
+python -m unittest discover -s tests                            # 228 tests
+TECHJAM_RUN_PUBLIC_SET=1 python -m unittest discover -s tests   # + score and bundle guards
+python -m scripts.profile_agent                                 # latency and memory
+python -m scripts.run_query_stress                              # wording sensitivity
+```
+
 ## Project Report
 
 The required short report — architecture, models, cost, feasibility figures,

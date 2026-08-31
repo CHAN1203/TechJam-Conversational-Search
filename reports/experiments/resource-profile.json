@@ -1,0 +1,26 @@
+{
+  "python_version": "3.11.4",
+  "sessions": 200,
+  "turns_measured": 470,
+  "construction_seconds": 25.0,
+  "evaluation_seconds": 44.6,
+  "projected_800_session_seconds": 203.6,
+  "latency_ms": {
+    "mean": 94.7,
+    "median": 89.6,
+    "p95": 174.3,
+    "p99": 235.9,
+    "max": 267.0
+  },
+  "memory_mb": {
+    "baseline_rss": 24.4,
+    "peak_rss": 800.6,
+    "agent_attributable": 776.2
+  },
+  "reported_token_usage": {
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "total_tokens": 0
+  },
+  "technical_score": 0.917406
+}

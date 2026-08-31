@@ -1,15 +1,18 @@
 # Architecture: what happens on one turn
 
-Current best is **E22**, public TechnicalScore `0.884741`. This describes the
+Current best is **E32**, public TechnicalScore `0.917406`. This describes the
 code as it runs today, not the design plan.
 
 Everything here is stdlib plus scikit-learn and numpy
 ([`requirements.txt`](../requirements.txt)); there is still no neural model,
 no pretrained weights, no network access, and zero reported tokens. The
-dependency arrived with E18: `starter/agent.py` imports
-[`starter/dense.py`](../starter/dense.py) unconditionally, so scikit-learn is
-required merely to construct an `Agent`, not only for the optional
-`retrieval_mode="dense"/"rrf"` paths. The dense index is TF-IDF + Truncated
+dependency arrived with E18. Since T40 the import of
+[`starter/dense.py`](../starter/dense.py) is **lazy** -- it happens inside
+`_build_index` only when the dense index is actually needed -- but the default
+configuration needs it, because `SEMANTIC_WEIGHT = 1.0`. So scikit-learn is
+required to construct a default `Agent`, while
+`Agent(semantic_weight=0.0, retrieval_mode="bm25")` runs on the standard
+library alone. The dense index is TF-IDF + Truncated
 SVD (latent semantic analysis) over the frozen catalog, built once at
 startup.
 

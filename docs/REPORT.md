@@ -204,7 +204,9 @@ TechnicalScore from 0.107 to 0.917 without one.
 
 ## 5. Feasibility: latency, memory, robustness
 
-Measured on Windows 11, Python 3.11.4, single process, no GPU.
+Measured on Windows 11, Python 3.11.4, single process, no GPU. Reproduce
+with `python -m scripts.profile_agent`; the committed run is
+[`resource-profile.json`](../reports/experiments/resource-profile.json).
 
 | Figure | Value |
 | --- | ---: |
@@ -375,8 +377,10 @@ the numbers are trustworthy rather than merely high.
    around the current point. A joint search may find a better optimum.
 4. **Close the resource gap.** Reduce the 802 MB footprint, and record
    behaviour under an enforced memory cap.
-5. **Per-route candidate pool size** — the one untested cell from the routing
-   work (a global pool increase was rejected as E7).
+5. **Recover `public_0020`.** The single unfound session has one review
+   against a target median of 6,846 and never enters the BM25 candidate pool at
+   any pool size up to 1,000. It needs a different retrieval path, not a wider
+   one.
 
 ---
 
